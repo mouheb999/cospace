@@ -119,7 +119,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (data.user) {
       const referralCode = `CS${data.user.id.slice(0, 6).toUpperCase()}`;
       
-      const { error: profileError } = await supabase.from('profiles').insert({
+      const profileData = {
         id: data.user.id,
         email,
         first_name: metadata.first_name,
@@ -127,7 +127,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         role: metadata.role,
         referral_code: referralCode,
         referred_by: metadata.referral_code || null,
-      });
+      };
+      const { error: profileError } = await supabase.from('profiles').insert(profileData as never);
 
       if (profileError) {
         console.error('Profile creation error:', profileError);

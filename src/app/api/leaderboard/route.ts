@@ -27,9 +27,10 @@ export async function GET() {
       .select('reward_text')
       .single();
 
+    const settingsData = settings as { reward_text: string } | null;
     return NextResponse.json({
       leaderboard: leaderboard || [],
-      rewardText: settings?.reward_text || '🎁 Le champion du mois gagne 1 semaine gratuite!',
+      rewardText: settingsData?.reward_text || '🎁 Le champion du mois gagne 1 semaine gratuite!',
     });
   } catch (error) {
     console.error('Leaderboard API error:', error);

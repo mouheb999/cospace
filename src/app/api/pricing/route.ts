@@ -73,9 +73,10 @@ export async function PUT(request: NextRequest) {
       .single();
 
     // Update price
+    const updateData = { price, updated_at: new Date().toISOString() };
     const { data: updatedPricing, error } = await supabase
       .from('pricing')
-      .update({ price, updated_at: new Date().toISOString() })
+      .update(updateData as never)
       .eq('id', id)
       .select()
       .single();
@@ -93,13 +94,14 @@ export async function PUT(request: NextRequest) {
       const oldPrice = (oldPricing as { price: number; plan_type: string }).price;
       const planType = (oldPricing as { price: number; plan_type: string }).plan_type;
       
-      await supabase.from('price_audit').insert({
+      const auditData = {
         pricing_id: id,
         plan_type: planType,
         old_price: oldPrice,
         new_price: price,
         changed_by: user.id,
-      });
+      };
+      await supabase.from('price_audit').insert(auditData as never);
     }
 
     return NextResponse.json({ pricing: updatedPricing });

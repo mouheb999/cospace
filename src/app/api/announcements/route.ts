@@ -50,7 +50,8 @@ export async function POST(request: NextRequest) {
       .eq('id', user.id)
       .single();
 
-    if (profile?.role !== 'admin') {
+    const profileRole = (profile as { role: string } | null)?.role;
+    if (profileRole !== 'admin') {
       return NextResponse.json(
         { error: 'Accès refusé' },
         { status: 403 }
@@ -67,14 +68,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const insertData = {
+      title,
+      content,
+      is_pinned: is_pinned || false,
+      created_by: user.id,
+    };
     const { data: announcement, error } = await supabase
       .from('announcements')
-      .insert({
-        title,
-        content,
-        is_pinned: is_pinned || false,
-        created_by: user.id,
-      })
+      .insert(insertData as never)
       .select()
       .single();
 
@@ -110,13 +112,14 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Check if user is admin
-    const { data: profile } = await supabase
+    const { data: profileDel } = await supabase
       .from('profiles')
       .select('role')
       .eq('id', user.id)
       .single();
 
-    if (profile?.role !== 'admin') {
+    const profileDelRole = (profileDel as { role: string } | null)?.role;
+    if (profileDelRole !== 'admin') {
       return NextResponse.json(
         { error: 'Accès refusé' },
         { status: 403 }

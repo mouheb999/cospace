@@ -71,17 +71,19 @@ export async function POST(request: NextRequest) {
       .eq('id', user.id)
       .single();
 
-    const currentStreak = (profile?.current_streak || 0) + 1;
-    const longestStreak = Math.max(profile?.longest_streak || 0, currentStreak);
+    const profileData = profile as { current_streak: number; longest_streak: number } | null;
+    const currentStreak = (profileData?.current_streak || 0) + 1;
+    const longestStreak = Math.max(profileData?.longest_streak || 0, currentStreak);
 
     // Create checkin record
+    const checkinInsert = {
+      user_id: user.id,
+      photo_url: urlData.publicUrl,
+      streak_count: currentStreak,
+    };
     const { data: checkin, error: checkinError } = await supabase
       .from('checkins')
-      .insert({
-        user_id: user.id,
-        photo_url: urlData.publicUrl,
-        streak_count: currentStreak,
-      })
+      .insert(checkinInsert as never)
       .select()
       .single();
 
@@ -94,13 +96,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Update profile streak
+    const updateData = {
+      current_streak: currentStreak,
+      longest_streak: longestStreak,
+      last_checkin: new Date().toISOString(),
+    };
     await supabase
       .from('profiles')
-      .update({
-        current_streak: currentStreak,
-        longest_streak: longestStreak,
-        last_checkin: new Date().toISOString(),
-      })
+      .update(updateData as never)
       .eq('id', user.id);
 
     return NextResponse.json({
