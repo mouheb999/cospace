@@ -1,12 +1,51 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui'
 import { Drip, OrbTR, StripeR, LiveDot } from '@/components/decorations/Decorations'
 import { Clock, Users, Monitor, Star, Instagram } from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
 
 export default function LandingPage() {
+  const [stats, setStats] = useState({ members: 0, checkinsToday: 0, streakRecord: 0 })
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      const supabase = createClient()
+      
+      // Get total members count
+      const { count: membersCount } = await supabase
+        .from('profiles')
+        .select('*', { count: 'exact', head: true })
+        .eq('role', 'client')
+      
+      // Get today's check-ins count
+      const today = new Date().toISOString().split('T')[0]
+      const { count: checkinsCount } = await supabase
+        .from('checkins')
+        .select('*', { count: 'exact', head: true })
+        .gte('created_at', `${today}T00:00:00`)
+        .lt('created_at', `${today}T23:59:59`)
+      
+      // Get highest streak record
+      const { data: topStreak } = await supabase
+        .from('profiles')
+        .select('longest_streak')
+        .order('longest_streak', { ascending: false })
+        .limit(1)
+        .single()
+      
+      setStats({
+        members: membersCount || 0,
+        checkinsToday: checkinsCount || 0,
+        streakRecord: (topStreak as { longest_streak: number } | null)?.longest_streak || 0
+      })
+    }
+    
+    fetchStats()
+  }, [])
+
   return (
     <div className="min-h-screen bg-black overflow-y-auto">
       {/* Fixed decorations */}
@@ -70,21 +109,21 @@ export default function LandingPage() {
             <div className="bg-surface2 rounded-xl p-4 flex justify-between items-center">
               <div>
                 <div className="text-[0.65rem] text-muted uppercase tracking-[0.1em]">Membres actifs</div>
-                <div className="font-display text-[2rem] text-teal">1,284</div>
+                <div className="font-display text-[2rem] text-teal">{stats.members.toLocaleString()}</div>
               </div>
               <span className="text-2xl">👥</span>
             </div>
             <div className="bg-surface2 rounded-xl p-4 flex justify-between items-center">
               <div>
                 <div className="text-[0.65rem] text-muted uppercase tracking-[0.1em]">Check-ins aujourd&apos;hui</div>
-                <div className="font-display text-[2rem] text-lime">47</div>
+                <div className="font-display text-[2rem] text-lime">{stats.checkinsToday}</div>
               </div>
               <span className="text-2xl">✅</span>
             </div>
             <div className="bg-surface2 rounded-xl p-4 flex justify-between items-center">
               <div>
                 <div className="text-[0.65rem] text-muted uppercase tracking-[0.1em]">Streak record</div>
-                <div className="font-display text-[2rem] text-yellow-bright">🔥 62j</div>
+                <div className="font-display text-[2rem] text-yellow-bright">🔥 {stats.streakRecord}j</div>
               </div>
               <span className="text-2xl">🏆</span>
             </div>
