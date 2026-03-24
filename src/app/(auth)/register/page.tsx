@@ -54,7 +54,7 @@ export default function RegisterPage() {
 
       if (data.user) {
         // Profile is created by database trigger, but we can also try to insert
-        const { error: profileError } = await supabase.from('profiles').upsert({
+        const profileData = {
           id: data.user.id,
           email,
           first_name: firstName,
@@ -62,7 +62,8 @@ export default function RegisterPage() {
           role,
           referral_code: generateReferralCode(),
           referred_by: referralCode || null,
-        }, { onConflict: 'id' })
+        }
+        const { error: profileError } = await supabase.from('profiles').upsert(profileData as never, { onConflict: 'id' })
 
         if (profileError) {
           console.error('Profile error:', profileError)
