@@ -86,12 +86,12 @@ export default function ClientDashboard() {
 
         if (leaderboardData) {
           const today = new Date().toDateString()
-          const mapped = leaderboardData.map((p, i) => ({
+          const mapped = (leaderboardData as Array<{id: string; first_name: string; last_name: string; current_streak: number; last_checkin: string | null}>).map((p, i) => ({
             rank: i + 1,
             name: `${p.first_name} ${p.last_name?.[0] || ''}.`,
             streak: p.current_streak || 0,
             checkedToday: p.last_checkin ? new Date(p.last_checkin).toDateString() === today : false,
-            isCurrentUser: p.id === user.id
+            isCurrentUser: p.id === user?.id
           }))
           setLeaderboard(mapped)
         }
