@@ -50,8 +50,8 @@ export default function LoginPage() {
             .eq('id', data.user.id)
             .maybeSingle()
           
-          if (profile?.role) {
-            role = profile.role
+          if (profile && typeof profile === 'object' && 'role' in profile) {
+            role = (profile as { role: string }).role
           }
         } catch (profileErr) {
           console.error('Profile fetch error:', profileErr)
