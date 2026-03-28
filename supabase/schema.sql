@@ -43,7 +43,10 @@ CREATE TABLE checkins (
   user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
   image_url TEXT NOT NULL,
   checked_in_at TIMESTAMPTZ DEFAULT NOW(),
-  streak_count INTEGER NOT NULL DEFAULT 1
+  streak_count INTEGER NOT NULL DEFAULT 1,
+  latitude DOUBLE PRECISION,
+  longitude DOUBLE PRECISION,
+  distance_meters INTEGER
 );
 
 -- =============================================

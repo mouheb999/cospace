@@ -4,9 +4,10 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button, Card, Badge, Avatar } from '@/components/ui'
 import { LiveDot } from '@/components/decorations/Decorations'
+import { CheckinTab } from '@/components/CheckinTab'
 import { 
   Home, Camera, CreditCard, TrendingUp, User, 
-  ChevronRight, Copy, LogOut, Bell, Settings, Loader2
+  ChevronRight, Copy, LogOut, Bell, Settings, Loader2, Check
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth/context'
 import { createClient } from '@/lib/supabase/client'
@@ -48,9 +49,7 @@ export default function ClientDashboard() {
   const [leaderboard, setLeaderboard] = useState<LeaderboardUser[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [checkinError, setCheckinError] = useState<string | null>(null)
-  const [isCameraActive, setIsCameraActive] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [todayCheckin, setTodayCheckin] = useState<{ image_url: string; checked_in_at: string } | null>(null)
 
   const supabase = createClient()
 
@@ -99,6 +98,20 @@ export default function ClientDashboard() {
           }))
           setLeaderboard(mapped)
         }
+
+        // Check if user already checked in today
+        const todayStr = new Date().toISOString().split('T')[0]
+        const { data: checkinData } = await supabase
+          .from('checkins')
+          .select('image_url, checked_in_at')
+          .eq('user_id', user.id)
+          .gte('checked_in_at', `${todayStr}T00:00:00Z`)
+          .lte('checked_in_at', `${todayStr}T23:59:59Z`)
+          .maybeSingle()
+
+        if (checkinData) {
+          setTodayCheckin(checkinData as { image_url: string; checked_in_at: string })
+        }
       } catch (err) {
         console.error('Error fetching data:', err)
         setError('Impossible de charger les données. Veuillez réessayer.')
@@ -145,79 +158,6 @@ export default function ClientDashboard() {
   const handleSignOut = async () => {
     await signOut()
     router.push('/')
-  }
-
-  const handleCheckIn = async (file: File) => {
-    setCheckinError(null)
-    
-    if (!file) {
-      setCheckinError('Veuillez sélectionner une photo')
-      return
-    }
-
-    // Check file size (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      setCheckinError('La photo ne doit pas dépasser 5MB')
-      return
-    }
-
-    try {
-      const formData = new FormData()
-      formData.append('photo', file)
-
-      const response = await fetch('/api/checkin', {
-        method: 'POST',
-        body: formData,
-      })
-
-      const result = await response.json()
-
-      if (!response.ok) {
-        throw new Error(result.error || 'Erreur lors du check-in')
-      }
-
-      // Success - show success message
-      setActiveTab('home')
-      
-      // Refresh data to update streak
-      if (user) {
-        const fetchData = async () => {
-          try {
-            // Fetch updated profile
-            const { data: profileData } = await supabase
-              .from('profiles')
-              .select('current_streak, longest_streak')
-              .eq('id', user.id)
-              .single()
-            
-            if (profileData && profile) {
-              // Update profile state
-              const profileUpdates = {
-                current_streak: (profileData as { current_streak: number }).current_streak,
-                longest_streak: (profileData as { longest_streak: number }).longest_streak
-              }
-              // Note: In a real app, you'd update the profile state properly
-              console.log('Profile updated:', profileUpdates)
-            }
-          } catch (err) {
-            console.error('Error refreshing profile:', err)
-          }
-        }
-        fetchData()
-      }
-    } catch (err) {
-      console.error('Check-in error:', err)
-      setCheckinError(err instanceof Error ? err.message : 'Erreur inattendue')
-    }
-  }
-
-  const activateCamera = () => {
-    // iOS Safari fix: Try to trigger camera directly
-    if (fileInputRef.current) {
-      fileInputRef.current.click()
-    } else {
-      setCheckinError('Erreur: Impossible d\'accéder à la caméra')
-    }
   }
 
   // Get active membership
@@ -355,16 +295,37 @@ export default function ClientDashboard() {
             </Card>
 
             {/* Check-in CTA */}
-            <button
-              onClick={() => setActiveTab('checkin')}
-              className="w-full bg-teal text-black rounded-[18px] p-5 flex items-center justify-between cursor-pointer mb-5 animate-glow transition-transform hover:scale-[1.01] border-none"
-            >
-              <div className="flex flex-col gap-1 text-left">
-                <div className="font-display text-[1.5rem] tracking-[0.06em]">Faire le Check-in</div>
-                <div className="text-[0.72rem] opacity-70 font-semibold">Validez votre présence aujourd&apos;hui</div>
+            {todayCheckin ? (
+              <div className="w-full bg-success/10 border border-success/30 rounded-[18px] p-5 flex items-center gap-4 mb-5">
+                <div className="w-16 h-16 rounded-[12px] overflow-hidden flex-shrink-0 border-2 border-success/30">
+                  <img 
+                    src={todayCheckin.image_url} 
+                    alt="Check-in du jour" 
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Check size={18} className="text-success" />
+                    <span className="font-display text-[1.2rem] tracking-[0.04em] text-success">Check-in validé !</span>
+                  </div>
+                  <div className="text-[0.72rem] text-muted">
+                    {new Date(todayCheckin.checked_in_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} · Streak {profile.current_streak || 0} 🔥
+                  </div>
+                </div>
               </div>
-              <span className="text-[2rem]">📸</span>
-            </button>
+            ) : (
+              <button
+                onClick={() => setActiveTab('checkin')}
+                className="w-full bg-teal text-black rounded-[18px] p-5 flex items-center justify-between cursor-pointer mb-5 animate-glow transition-transform hover:scale-[1.01] border-none"
+              >
+                <div className="flex flex-col gap-1 text-left">
+                  <div className="font-display text-[1.5rem] tracking-[0.06em]">Faire le Check-in</div>
+                  <div className="text-[0.72rem] opacity-70 font-semibold">Validez votre présence aujourd&apos;hui</div>
+                </div>
+                <span className="text-[2rem]">📸</span>
+              </button>
+            )}
 
             {/* Announcements */}
             <div>
@@ -391,89 +352,7 @@ export default function ClientDashboard() {
 
         {/* Check-in Tab */}
         {activeTab === 'checkin' && (
-          <div className="animate-fade-up">
-            <div className="mb-4">
-              <h2 className="font-display text-[1.6rem] tracking-[0.06em]">Check-in du jour</h2>
-              <p className="text-[0.78rem] text-muted mt-1">Prenez une photo pour valider votre présence.</p>
-            </div>
-
-            {/* Hidden file input */}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              onChange={(e) => {
-                const file = e.target.files?.[0]
-                if (file) handleCheckIn(file)
-              }}
-              className="hidden"
-            />
-
-            {/* Error display */}
-            {checkinError && (
-              <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 mb-4">
-                <div className="text-red-400 text-sm">{checkinError}</div>
-              </div>
-            )}
-
-            {/* Camera Shell */}
-            <div className="bg-black rounded-[20px] overflow-hidden aspect-[3/4] relative mb-5 flex items-center justify-center">
-              <div className="absolute inset-0 bg-gradient-to-br from-[#0a0a14] to-[#0a1414] flex flex-col items-center justify-center gap-3 text-muted text-[0.85rem]">
-                <Camera size={48} className="opacity-40" />
-                <span>Caméra en attente</span>
-                <span className="text-[0.7rem] opacity-50">Appuyez sur &quot;Activer&quot; pour démarrer</span>
-              </div>
-              
-              {/* Corner brackets */}
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className="w-[200px] h-[240px] relative">
-                  <div className="absolute top-0 left-0 w-[30px] h-[30px] border-t-[3px] border-l-[3px] border-teal rounded-tl-md" />
-                  <div className="absolute top-0 right-0 w-[30px] h-[30px] border-t-[3px] border-r-[3px] border-teal rounded-tr-md" />
-                  <div className="absolute bottom-0 left-0 w-[30px] h-[30px] border-b-[3px] border-l-[3px] border-teal rounded-bl-md" />
-                  <div className="absolute bottom-0 right-0 w-[30px] h-[30px] border-b-[3px] border-r-[3px] border-teal rounded-br-md" />
-                  <div className="absolute left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-teal to-transparent animate-scan top-1/2" />
-                </div>
-              </div>
-
-              {/* Date overlay */}
-              <div className="absolute top-3 left-3 bg-black/70 rounded-lg px-3 py-1.5 text-[0.7rem] text-teal font-semibold">
-                Mardi 24 Mars · 14:32
-              </div>
-            </div>
-
-            {/* Steps */}
-            <div className="flex gap-2 mb-4">
-              <div className="flex-1 bg-teal rounded-lg h-1" />
-              <div className="flex-1 bg-surface2 rounded-lg h-1" />
-              <div className="flex-1 bg-surface2 rounded-lg h-1" />
-            </div>
-            <div className="flex justify-between text-[0.65rem] text-muted mb-4">
-              <span className="text-teal">① Activer la caméra</span>
-              <span>② Capturer</span>
-              <span>③ Confirmer</span>
-            </div>
-
-            {/* Controls */}
-            <div className="flex gap-3">
-              <Button variant="outline" className="flex-none px-5 h-[60px]">
-                <Camera size={18} />
-              </Button>
-              <Button variant="teal" fullWidth className="h-[60px] text-[0.9rem]" onClick={activateCamera}>
-                <Camera size={20} />
-                Activer & Capturer
-              </Button>
-            </div>
-
-            {/* Streak info */}
-            <div className="mt-5 bg-surface rounded-[14px] p-4 flex items-center gap-3">
-              <span className="text-[1.4rem]">🔥</span>
-              <div>
-                <div className="font-bold text-[0.85rem]">Streak actuel : {profile.current_streak || 0} jours</div>
-                <div className="text-[0.72rem] text-muted">Encore 2 jours pour atteindre le milestone 14j !</div>
-              </div>
-            </div>
-          </div>
+          <CheckinTab />
         )}
 
         {/* Subscription Tab - READ ONLY */}
