@@ -5,8 +5,9 @@ import { useRouter } from 'next/navigation'
 import { Button, Input, Badge, Avatar } from '@/components/ui'
 import {
   LayoutGrid, Users, DollarSign, TrendingUp, Tag, Bell, Settings,
-  AlertTriangle, ChevronRight, Download, Plus, Search
+  AlertTriangle, ChevronRight, Download, Plus, Search, LogOut
 } from 'lucide-react'
+import { useAuth } from '@/lib/auth/context'
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer
 } from 'recharts'
@@ -46,6 +47,7 @@ const mockAnnouncements = [
 
 export default function AdminDashboard() {
   const router = useRouter()
+  const { signOut } = useAuth()
   const [activePage, setActivePage] = useState<AdminPage>('overview')
   const [prices, setPrices] = useState(mockPricing)
   const [changedPrices, setChangedPrices] = useState<Set<string>>(new Set())
@@ -160,8 +162,9 @@ export default function AdminDashboard() {
         </nav>
 
         <div className="p-5 border-t border-border">
-          <Button variant="ghost" fullWidth size="sm" onClick={() => router.push('/')}>
-            ← Quitter
+          <Button variant="danger" fullWidth size="sm" onClick={signOut}>
+            <LogOut size={14} />
+            Déconnexion
           </Button>
         </div>
       </aside>
