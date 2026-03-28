@@ -63,7 +63,7 @@ function LoginForm() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${window.location.origin}/auth/callback?next=${redirectTo || '/'}`,
+        redirectTo: `${window.location.origin}/auth/callback?next=${redirectTo || '/dashboard'}`,
       },
     })
     if (error) {
