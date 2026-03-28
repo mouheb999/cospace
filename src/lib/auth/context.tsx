@@ -139,12 +139,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    // Clear Supabase session completely
+    await supabase.auth.signOut({ scope: 'global' });
     setUser(null);
     setProfile(null);
     setSession(null);
     // Force a full page refresh to clear any cached session data
-    window.location.href = '/login';
+    // Redirect to landing page after logout
+    window.location.href = '/';
   };
 
   return (

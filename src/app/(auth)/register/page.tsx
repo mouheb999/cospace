@@ -23,10 +23,23 @@ export default function RegisterPage() {
 
   const handleGoogleOAuth = async () => {
     setError('')
+    
+    // Check if user already has a session
+    const { data: { session } } = await supabase.auth.getSession()
+    if (session) {
+      // Already logged in, redirect to dashboard
+      router.push('/dashboard')
+      return
+    }
+    
+    // No session, trigger Google OAuth with account picker
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
         redirectTo: `${window.location.origin}/auth/callback?next=/dashboard`,
+        queryParams: {
+          prompt: 'select_account', // Force account picker every time
+        },
       },
     })
     if (error) {
