@@ -3,83 +3,73 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({
-    request,
-  })
+  const { pathname } = request.nextUrl
+  let response = NextResponse.next({ request })
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        getAll() {
-          return request.cookies.getAll()
-        },
-        setAll(cookiesToSet: { name: string; value: string; options?: CookieOptions }[]) {
-          cookiesToSet.forEach(({ name, value }: { name: string; value: string }) => request.cookies.set(name, value))
-          supabaseResponse = NextResponse.next({
-            request,
+        getAll: () => request.cookies.getAll(),
+        setAll: (cookiesToSet: { name: string; value: string; options?: CookieOptions }[]) => {
+          cookiesToSet.forEach(({ name, value }) => {
+            request.cookies.set(name, value)
+            response.cookies.set(name, value)
           })
-          cookiesToSet.forEach(({ name, value, options }: { name: string; value: string; options?: CookieOptions }) =>
-            supabaseResponse.cookies.set(name, value, options)
-          )
         },
       },
     }
   )
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const { data: { user } } = await supabase.auth.getUser()
 
-  const pathname = request.nextUrl.pathname
+  // Public routes — always accessible regardless of session
+  const publicRoutes = ['/', '/login', '/register', '/auth/callback', '/auth/error']
+  const isPublicRoute = publicRoutes.includes(pathname) || pathname.startsWith('/api/')
 
-  // Public routes that don't require authentication
-  const publicRoutes = ['/', '/login', '/register', '/api/auth/register']
-  const isPublicRoute = publicRoutes.some(route => pathname === route || pathname.startsWith('/api/'))
-
-  // If user is not authenticated and trying to access protected routes
-  if (!user && !isPublicRoute) {
-    const url = request.nextUrl.clone()
-    url.pathname = '/login'
-    url.searchParams.set('redirect', pathname)
-    return NextResponse.redirect(url)
+  if (isPublicRoute) {
+    // If user is already logged in and tries to visit /login or /register,
+    // redirect them to their dashboard instead of showing auth screens again
+    if (user && (pathname === '/login' || pathname === '/register')) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single()
+      const destination = (profile as { role: string } | null)?.role === 'admin' ? '/admin' : '/dashboard'
+      return NextResponse.redirect(new URL(destination, request.url))
+    }
+    return response
   }
 
-  // If user is authenticated, check role-based access
-  if (user) {
-    // Fetch user profile to get role
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single()
-
-    const userRole = (profile as { role: string } | null)?.role || 'client'
-
-    // Redirect authenticated users away from auth pages
-    if (pathname === '/login' || pathname === '/register') {
-      const url = request.nextUrl.clone()
-      url.pathname = userRole === 'admin' ? '/admin' : '/dashboard'
-      return NextResponse.redirect(url)
-    }
-
-    // Protect admin routes - only admins can access
-    if (pathname.startsWith('/admin') && userRole !== 'admin') {
-      const url = request.nextUrl.clone()
-      url.pathname = '/dashboard'
-      return NextResponse.redirect(url)
-    }
-
-    // Protect client dashboard - only clients can access
-    if (pathname.startsWith('/dashboard') && userRole === 'admin') {
-      const url = request.nextUrl.clone()
-      url.pathname = '/admin'
-      return NextResponse.redirect(url)
-    }
+  // Protected routes — require authentication
+  if (!user) {
+    const loginUrl = new URL('/login', request.url)
+    loginUrl.searchParams.set('redirectTo', pathname)
+    return NextResponse.redirect(loginUrl)
   }
 
-  return supabaseResponse
+  // Role-based protection
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single()
+
+  const userRole = (profile as { role: string } | null)?.role || 'client'
+
+  // Client trying to access admin — redirect to their dashboard
+  if (pathname.startsWith('/admin') && userRole !== 'admin') {
+    return NextResponse.redirect(new URL('/dashboard', request.url))
+  }
+
+  // Admin trying to access client dashboard — redirect to admin
+  if (pathname.startsWith('/dashboard') && userRole === 'admin') {
+    return NextResponse.redirect(new URL('/admin', request.url))
+  }
+
+  return response
 }
 
 export const config = {

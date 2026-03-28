@@ -143,6 +143,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setProfile(null);
     setSession(null);
+    // Force a full page refresh to clear any cached session data
+    window.location.href = '/login';
   };
 
   return (
