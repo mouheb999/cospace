@@ -476,58 +476,88 @@ export default function ClientDashboard() {
           </div>
         )}
 
-        {/* Subscription Tab */}
+        {/* Subscription Tab - READ ONLY */}
         {activeTab === 'sub' && (
           <div className="animate-fade-up">
             <h2 className="font-display text-[1.6rem] tracking-[0.06em] mb-4">Mon Abonnement</h2>
 
-            <Card variant="streak" className="mb-4">
-              <div className="flex justify-between items-start mb-4">
-                <div>
-                  <div className="font-display text-[1.6rem] tracking-[0.06em] text-teal">{activeMembership?.plan_type || 'Aucun'}</div>
-                  <div className="text-[0.72rem] text-muted">{activeMembership?.price_paid || 0} TND</div>
+            {/* Current Plan Card */}
+            {activeMembership ? (
+              <Card variant="streak" className="mb-4">
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <div className="font-display text-[1.6rem] tracking-[0.06em] text-teal capitalize">{activeMembership.plan_type}</div>
+                    <div className="text-[0.72rem] text-muted">{activeMembership.price_paid} TND</div>
+                  </div>
+                  <Badge variant={daysRemaining <= 7 ? 'default' : 'teal'}>
+                    {daysRemaining <= 0 ? '⚠️ Expiré' : daysRemaining <= 7 ? '⚠️ Expire bientôt' : '✓ Actif'}
+                  </Badge>
                 </div>
-                <Badge variant="teal">✓ Actif</Badge>
-              </div>
-              <div className="grid grid-cols-2 gap-3 mb-4">
-                <div className="bg-surface2 rounded-[10px] p-3">
-                  <div className="text-[0.6rem] text-muted uppercase tracking-[0.1em] mb-1">Début</div>
-                  <div className="font-bold text-[0.88rem]">{activeMembership ? formatDate(activeMembership.start_date) : '-'}</div>
+                <div className="grid grid-cols-2 gap-3 mb-4">
+                  <div className="bg-surface2 rounded-[10px] p-3">
+                    <div className="text-[0.6rem] text-muted uppercase tracking-[0.1em] mb-1">Début</div>
+                    <div className="font-bold text-[0.88rem]">{formatDate(activeMembership.start_date)}</div>
+                  </div>
+                  <div className="bg-surface2 rounded-[10px] p-3">
+                    <div className="text-[0.6rem] text-muted uppercase tracking-[0.1em] mb-1">Expiration</div>
+                    <div className={`font-bold text-[0.88rem] ${daysRemaining <= 7 ? 'text-yellow-bright' : 'text-lime'}`}>
+                      {formatDate(activeMembership.end_date)}
+                    </div>
+                  </div>
                 </div>
-                <div className="bg-surface2 rounded-[10px] p-3">
-                  <div className="text-[0.6rem] text-muted uppercase tracking-[0.1em] mb-1">Expiration</div>
-                  <div className="font-bold text-[0.88rem] text-lime">{activeMembership ? formatDate(activeMembership.end_date) : '-'}</div>
+                <div className="bg-white/[0.06] rounded-full h-2 overflow-hidden">
+                  <div 
+                    className="h-full bg-gradient-to-r from-teal to-lime rounded-full transition-all duration-500" 
+                    style={{ 
+                      width: `${Math.min(100, Math.max(0, 100 - (daysRemaining / (activeMembership.plan_type === 'monthly' ? 30 : activeMembership.plan_type === 'weekly' ? 7 : 1)) * 100))}%` 
+                    }} 
+                  />
                 </div>
-              </div>
-              <div className="bg-white/[0.06] rounded-full h-2 overflow-hidden">
-                <div className="h-full bg-gradient-to-r from-teal to-lime rounded-full" style={{ width: '3%' }} />
-              </div>
-              <div className="flex justify-between text-[0.65rem] text-muted mt-1.5">
-                <span>{daysRemaining} jours restants</span>
-                <span>3% utilisé</span>
-              </div>
-            </Card>
+                <div className="flex justify-between text-[0.65rem] text-muted mt-1.5">
+                  <span>{daysRemaining} jours restants</span>
+                  <span>Statut: {activeMembership.status}</span>
+                </div>
+              </Card>
+            ) : (
+              <Card variant="default" className="mb-4">
+                <div className="text-center py-6">
+                  <div className="text-[2rem] mb-2">📋</div>
+                  <div className="font-display text-[1.2rem] tracking-[0.04em] mb-1">Aucun abonnement actif</div>
+                  <div className="text-[0.78rem] text-muted">Contactez un membre du staff pour souscrire à un plan.</div>
+                </div>
+              </Card>
+            )}
 
-            <Button variant="teal" fullWidth className="mb-4">
-              + Ajouter / Renouveler un plan
-            </Button>
+            {/* Info Notice - Read Only */}
+            <div className="bg-surface border border-border rounded-xl p-4 mb-4">
+              <div className="flex items-start gap-3">
+                <span className="text-[1.2rem]">ℹ️</span>
+                <div>
+                  <div className="font-semibold text-[0.85rem] mb-1">Gestion des abonnements</div>
+                  <div className="text-[0.78rem] text-muted leading-relaxed">
+                    Pour changer ou renouveler votre abonnement, veuillez vous adresser à un membre du staff à l&apos;accueil.
+                  </div>
+                </div>
+              </div>
+            </div>
 
             {/* History */}
-            <div className="text-[0.72rem] font-bold tracking-[0.12em] uppercase text-muted mb-3">Historique</div>
+            <div className="text-[0.72rem] font-bold tracking-[0.12em] uppercase text-muted mb-3">Historique des abonnements</div>
             {memberships.length > 0 ? memberships.map((item) => (
               <div key={item.id} className="flex justify-between items-center py-3 border-b border-border last:border-none">
                 <div>
-                  <div className="font-semibold text-[0.85rem]">{item.plan_type}</div>
+                  <div className="font-semibold text-[0.85rem] capitalize">{item.plan_type}</div>
                   <div className="text-[0.7rem] text-muted">{formatDate(item.start_date)} – {formatDate(item.end_date)}</div>
                 </div>
                 <div className="text-right">
                   <div className={`font-bold ${item.status === 'active' ? 'text-teal' : 'text-muted'}`}>{item.price_paid} TND</div>
                   {item.status === 'active' && <Badge variant="teal">Actif</Badge>}
                   {item.status === 'expired' && <Badge variant="default">Expiré</Badge>}
+                  {item.status === 'cancelled' && <Badge variant="default">Annulé</Badge>}
                 </div>
               </div>
             )) : (
-              <div className="text-muted text-sm py-3">Aucun abonnement</div>
+              <div className="text-muted text-sm py-3">Aucun historique d&apos;abonnement</div>
             )}
           </div>
         )}

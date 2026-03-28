@@ -5,8 +5,6 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Button, Input } from '@/components/ui'
 import { Drip, OrbTR } from '@/components/decorations/Decorations'
-import { createClient } from '@/lib/supabase/client'
-import { generateReferralCode } from '@/lib/utils'
 
 export default function RegisterPage() {
   const router = useRouter()
@@ -25,64 +23,53 @@ export default function RegisterPage() {
     setError('')
     setIsLoading(true)
 
-    if (role === 'admin' && adminCode !== 'admin123') {
-      setError('Code secret admin invalide')
+    // Client-side validation
+    if (password.length < 8) {
+      setError('Le mot de passe doit contenir au moins 8 caractères')
       setIsLoading(false)
       return
     }
 
     try {
-      const supabase = createClient()
-      
-      const { data, error: authError } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            first_name: firstName,
-            last_name: lastName,
-            role,
-          },
+      // Call server-side API route for secure registration
+      const response = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
         },
+        body: JSON.stringify({
+          email,
+          password,
+          firstName,
+          lastName,
+          role,
+          adminCode: role === 'admin' ? adminCode : undefined,
+          referralCode: referralCode || undefined,
+        }),
       })
 
-      if (authError) {
-        setError(authError.message)
+      const data = await response.json()
+
+      if (!response.ok) {
+        setError(data.error || 'Une erreur est survenue')
         setIsLoading(false)
         return
       }
 
-      if (data.user) {
-        // Profile is created by database trigger, but we can also try to insert
-        const profileData = {
-          id: data.user.id,
-          email,
-          first_name: firstName,
-          last_name: lastName,
-          role,
-          referral_code: generateReferralCode(),
-          referred_by: referralCode || null,
-        }
-        const { error: profileError } = await supabase.from('profiles').upsert(profileData as never, { onConflict: 'id' })
-
-        if (profileError) {
-          console.error('Profile error:', profileError)
-        }
-
-        // If session exists, user is logged in automatically (email confirmation disabled)
-        if (data.session) {
-          // User is already logged in, redirect to dashboard
-          if (role === 'admin') {
-            router.push('/admin')
-          } else {
-            router.push('/dashboard')
-          }
+      // Registration successful
+      if (data.session) {
+        // User is logged in automatically, redirect to appropriate dashboard
+        if (role === 'admin') {
+          router.push('/admin')
         } else {
-          // Email confirmation might be enabled, redirect to login
-          router.push('/login?registered=true')
+          router.push('/dashboard')
         }
+      } else {
+        // Email confirmation might be enabled, redirect to login
+        router.push('/login?registered=true')
       }
     } catch (err) {
+      console.error('Registration error:', err)
       setError('Une erreur est survenue')
       setIsLoading(false)
     }
