@@ -17,6 +17,9 @@ CREATE TABLE profiles (
   referral_code TEXT NOT NULL UNIQUE,
   referred_by TEXT,
   freeze_tokens INTEGER DEFAULT 3,
+  current_streak INTEGER DEFAULT 0,
+  longest_streak INTEGER DEFAULT 0,
+  last_checkin TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );

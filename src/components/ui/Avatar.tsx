@@ -8,9 +8,10 @@ interface AvatarProps {
   size?: 'sm' | 'md' | 'lg' | 'xl'
   className?: string
   gradient?: 'teal' | 'gold' | 'silver' | 'bronze' | 'purple' | 'red'
+  avatarUrl?: string
 }
 
-export function Avatar({ name, size = 'md', className, gradient = 'teal' }: AvatarProps) {
+export function Avatar({ name, size = 'md', className, gradient = 'teal', avatarUrl }: AvatarProps) {
   const sizes = {
     sm: 'w-8 h-8 text-[0.65rem]',
     md: 'w-[38px] h-[38px] text-[0.78rem]',
@@ -30,13 +31,25 @@ export function Avatar({ name, size = 'md', className, gradient = 'teal' }: Avat
   return (
     <div
       className={cn(
-        'rounded-full flex items-center justify-center font-bold text-black flex-shrink-0',
+        'rounded-full flex items-center justify-center font-bold text-black flex-shrink-0 overflow-hidden',
         sizes[size],
-        gradients[gradient],
         className
       )}
     >
-      {getInitials(name)}
+      {avatarUrl ? (
+        <img 
+          src={avatarUrl} 
+          alt={name}
+          className="w-full h-full object-cover"
+        />
+      ) : (
+        <div className={cn(
+          'w-full h-full rounded-full flex items-center justify-center',
+          gradients[gradient]
+        )}>
+          {getInitials(name)}
+        </div>
+      )}
     </div>
   )
 }

@@ -10,6 +10,9 @@ import {
   ChevronRight, Copy, LogOut, Bell, Settings, Loader2, Check
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth/context'
+import { useProfile } from '@/hooks/useProfile'
+import { useStreak } from '@/hooks/useStreak'
+import { useLeaderboard } from '@/hooks/useLeaderboard'
 import { createClient } from '@/lib/supabase/client'
 
 type TabType = 'home' | 'checkin' | 'sub' | 'rank' | 'profile'
@@ -41,24 +44,30 @@ interface LeaderboardUser {
 
 export default function ClientDashboard() {
   const router = useRouter()
-  const { user, profile, isLoading: authLoading, signOut } = useAuth()
+  const { user, isLoading: authLoading, signOut } = useAuth()
+  const { profile, loading: profileLoading, updateProfile, uploadAvatar } = useProfile()
+  const { streakData, loading: streakLoading, refreshStreak } = useStreak()
+  const { leaderboard, loading: leaderboardLoading } = useLeaderboard()
+  
   const [activeTab, setActiveTab] = useState<TabType>('home')
   const [copied, setCopied] = useState(false)
   const [memberships, setMemberships] = useState<Membership[]>([])
   const [announcements, setAnnouncements] = useState<Announcement[]>([])
-  const [leaderboard, setLeaderboard] = useState<LeaderboardUser[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [todayCheckin, setTodayCheckin] = useState<{ image_url: string; checked_in_at: string } | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [editingProfile, setEditingProfile] = useState(false)
+  const [editForm, setEditForm] = useState({ first_name: '', last_name: '' })
 
   const supabase = createClient()
 
-  // Fetch data on mount
+  // Combined loading state
+  const isLoading = authLoading || profileLoading || streakLoading || leaderboardLoading
+
+  // Fetch additional data on mount
   useEffect(() => {
     if (!user) return
 
     const fetchData = async () => {
-      setIsLoading(true)
       try {
         // Fetch memberships
         const { data: membershipData } = await supabase
@@ -80,25 +89,6 @@ export default function ClientDashboard() {
 
         if (announcementData) setAnnouncements(announcementData)
 
-        // Fetch leaderboard (top 10 by streak)
-        const { data: leaderboardData } = await supabase
-          .from('profiles')
-          .select('id, first_name, last_name, current_streak, last_checkin')
-          .order('current_streak', { ascending: false })
-          .limit(10)
-
-        if (leaderboardData) {
-          const today = new Date().toDateString()
-          const mapped = (leaderboardData as Array<{id: string; first_name: string; last_name: string; current_streak: number; last_checkin: string | null}>).map((p, i) => ({
-            rank: i + 1,
-            name: `${p.first_name} ${p.last_name?.[0] || ''}.`,
-            streak: p.current_streak || 0,
-            checkedToday: p.last_checkin ? new Date(p.last_checkin).toDateString() === today : false,
-            isCurrentUser: p.id === user?.id
-          }))
-          setLeaderboard(mapped)
-        }
-
         // Check if user already checked in today
         const todayStr = new Date().toISOString().split('T')[0]
         const { data: checkinData } = await supabase
@@ -115,8 +105,6 @@ export default function ClientDashboard() {
       } catch (err) {
         console.error('Error fetching data:', err)
         setError('Impossible de charger les données. Veuillez réessayer.')
-      } finally {
-        setIsLoading(false)
       }
     }
 
@@ -160,6 +148,34 @@ export default function ClientDashboard() {
     router.push('/')
   }
 
+  const handleEditProfile = () => {
+    setEditForm({ 
+      first_name: profile?.first_name || '', 
+      last_name: profile?.last_name || '' 
+    })
+    setEditingProfile(true)
+  }
+
+  const handleSaveProfile = async () => {
+    try {
+      await updateProfile(editForm)
+      setEditingProfile(false)
+    } catch (err) {
+      console.error('Error updating profile:', err)
+    }
+  }
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    
+    try {
+      await uploadAvatar(file)
+    } catch (err) {
+      console.error('Error uploading avatar:', err)
+    }
+  }
+
   // Get active membership
   const activeMembership = memberships.find(m => m.status === 'active')
   const daysRemaining = activeMembership 
@@ -188,7 +204,7 @@ export default function ClientDashboard() {
     { id: 'profile' as const, label: 'Profil', icon: User },
   ]
 
-  const weekProgress = [true, true, true, true, true, true, false]
+  const weekProgress = streakData?.weekProgress || [false, false, false, false, false, false, false]
 
   return (
     <div className="min-h-screen bg-bg flex flex-col">
@@ -250,13 +266,13 @@ export default function ClientDashboard() {
               <div className="flex items-center gap-4">
                 <span className="text-[2.4rem] animate-flame">🔥</span>
                 <div>
-                  <div className="font-display text-[2.8rem] text-teal leading-none">{profile.current_streak || 0}</div>
+                  <div className="font-display text-[2.8rem] text-teal leading-none">{streakData?.currentStreak || 0}</div>
                   <div className="text-[0.7rem] text-muted uppercase tracking-[0.1em]">Jours de Streak</div>
                 </div>
               </div>
               <div className="text-right">
                 <div className="text-[0.7rem] text-muted mb-2">
-                  Meilleur : <strong className="text-lime">{profile.longest_streak || 0} jours</strong>
+                  Meilleur : <strong className="text-lime">{streakData?.bestStreak || 0} jours</strong>
                 </div>
                 <div className="flex gap-1">
                   {weekProgress.map((done, i) => (
@@ -310,7 +326,7 @@ export default function ClientDashboard() {
                     <span className="font-display text-[1.2rem] tracking-[0.04em] text-success">Check-in validé !</span>
                   </div>
                   <div className="text-[0.72rem] text-muted">
-                    {new Date(todayCheckin.checked_in_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} · Streak {profile.current_streak || 0} 🔥
+                    {new Date(todayCheckin.checked_in_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} · Streak {streakData?.currentStreak || 0} 🔥
                   </div>
                 </div>
               </div>
@@ -507,16 +523,70 @@ export default function ClientDashboard() {
         {activeTab === 'profile' && (
           <div className="animate-fade-up">
             {/* Profile Header */}
-            <div className="bg-surface border border-border rounded-[20px] p-6 flex items-center gap-5 mb-5">
-              <Avatar name={`${profile.first_name} ${profile.last_name}`} size="lg" />
-              <div>
-                <div className="font-display text-[1.4rem] tracking-[0.04em]">
-                  {profile.first_name} {profile.last_name}
+            <div className="bg-surface border border-border rounded-[20px] p-6 mb-5">
+              <div className="flex items-center gap-5 mb-4">
+                <div className="relative">
+                  <Avatar name={`${profile.first_name} ${profile.last_name}`} size="lg" avatarUrl={profile.avatar_url} />
+                  <label className="absolute bottom-0 right-0 w-8 h-8 bg-teal rounded-full flex items-center justify-center cursor-pointer hover:bg-teal/80 transition-colors">
+                    <Camera size={16} className="text-white" />
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleAvatarUpload}
+                      className="hidden"
+                    />
+                  </label>
                 </div>
-                <div className="text-[0.75rem] text-muted mt-0.5">{profile.email}</div>
-                <div className="flex gap-1.5 mt-2">
-                  <Badge variant="teal">{activeMembership?.plan_type || 'Free'}</Badge>
-                  <Badge variant="lime">Streak {profile.current_streak || 0}🔥</Badge>
+                <div className="flex-1">
+                  {editingProfile ? (
+                    <div className="flex gap-2 mb-2">
+                      <input
+                        type="text"
+                        value={editForm.first_name}
+                        onChange={(e) => setEditForm(prev => ({ ...prev, first_name: e.target.value }))}
+                        className="bg-surface2 border border-border rounded-lg px-3 py-1 text-sm flex-1"
+                        placeholder="Prénom"
+                      />
+                      <input
+                        type="text"
+                        value={editForm.last_name}
+                        onChange={(e) => setEditForm(prev => ({ ...prev, last_name: e.target.value }))}
+                        className="bg-surface2 border border-border rounded-lg px-3 py-1 text-sm flex-1"
+                        placeholder="Nom"
+                      />
+                      <button
+                        onClick={handleSaveProfile}
+                        className="bg-teal text-black px-3 py-1 rounded-lg text-sm font-medium"
+                      >
+                        Sauver
+                      </button>
+                      <button
+                        onClick={() => setEditingProfile(false)}
+                        className="bg-surface2 border border-border px-3 py-1 rounded-lg text-sm"
+                      >
+                        Annuler
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="font-display text-[1.4rem] tracking-[0.04em]">
+                          {profile.first_name} {profile.last_name}
+                        </div>
+                        <div className="text-[0.75rem] text-muted mt-0.5">{profile.email}</div>
+                      </div>
+                      <button
+                        onClick={handleEditProfile}
+                        className="text-teal hover:text-teal/80 transition-colors"
+                      >
+                        <User size={18} />
+                      </button>
+                    </div>
+                  )}
+                  <div className="flex gap-1.5 mt-2">
+                    <Badge variant="teal">{activeMembership?.plan_type || 'Free'}</Badge>
+                    <Badge variant="lime">Streak {streakData?.currentStreak || 0}🔥</Badge>
+                  </div>
                 </div>
               </div>
             </div>
@@ -524,8 +594,8 @@ export default function ClientDashboard() {
             {/* Stats Grid */}
             <div className="grid grid-cols-2 gap-3 mb-4">
               {[
-                { value: profile.current_streak || 0, label: 'Streak actuel' },
-                { value: profile.longest_streak || 0, label: 'Meilleur streak' },
+                { value: streakData?.currentStreak || 0, label: 'Streak actuel' },
+                { value: streakData?.bestStreak || 0, label: 'Meilleur streak' },
                 { value: 0, label: 'Check-ins total' },
                 { value: 0, label: 'Freeze tokens' },
               ].map((stat, i) => (

@@ -3,8 +3,9 @@
 import { useRef, useState, useCallback, useEffect } from 'react'
 import Image from 'next/image'
 import { submitCheckin, type CheckinResult } from '@/app/actions/checkin'
-import { Button } from '@/components/ui'
+import { Button, Card, Badge, Avatar } from '@/components/ui'
 import { Camera, MapPin, Check, AlertTriangle, Loader2 } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 
 type Step = 'idle' | 'camera' | 'preview' | 'location' | 'review' | 'submitting' | 'success' | 'error'
 
@@ -15,6 +16,7 @@ interface LocationData {
 }
 
 export function CheckinTab() {
+  const router = useRouter()
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -136,6 +138,8 @@ export function CheckinTab() {
     if (result.success) {
       setStreak(result.streak)
       setStep('success')
+      // Refresh the page to update dashboard data
+      router.refresh()
     } else {
       setErrorMsg(result.error)
       setStep('error')

@@ -136,6 +136,17 @@ export async function submitCheckin(payload: {
 
   const longestStreak = Math.max(newStreak, profileTyped?.longest_streak ?? 0)
 
+  // Update profile with new streak data
+  await supabase
+    .from('profiles')
+    .update({
+      current_streak: newStreak,
+      longest_streak: longestStreak,
+      last_checkin: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    } as never)
+    .eq('id', user.id)
+
   // ── 6. Insert check-in row ─────────────────────────────────────────────────
   const { error: insertError } = await supabase.from('checkins').insert({
     user_id: user.id,
@@ -152,16 +163,7 @@ export async function submitCheckin(payload: {
     return { success: false, error: 'Échec de l\'enregistrement du check-in. Réessayez.' }
   }
 
-  // ── 7. Update streak on profile ───────────────────────────────────────────
-  await supabase
-    .from('profiles')
-    .update({
-      current_streak: newStreak,
-      longest_streak: longestStreak,
-      last_checkin: new Date().toISOString(),
-    } as never)
-    .eq('id', user.id)
-
+  
   revalidatePath('/dashboard')
   return { success: true, streak: newStreak }
 }
