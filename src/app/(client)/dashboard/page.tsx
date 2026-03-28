@@ -117,7 +117,7 @@ export default function ClientDashboard() {
     }
   }, [authLoading, user, router])
 
-  if (authLoading || !user) {
+  if (authLoading || !user || !profile) {
     return (
       <div className="min-h-screen bg-bg flex items-center justify-center">
         <div className="text-white">Chargement...</div>
