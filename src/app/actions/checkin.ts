@@ -81,14 +81,23 @@ export async function submitCheckin(payload: {
 
   // Convert base64 to Uint8Array
   const binaryString = Buffer.from(base64Data, 'base64')
+  const uint8Array = new Uint8Array(binaryString)
 
+  console.log('Uploading to:', fileName, 'Size:', uint8Array.length, 'Type:', mimeType)
+  
   const { error: uploadError } = await supabase.storage
     .from('checkins')
-    .upload(fileName, binaryString, { contentType: mimeType, upsert: false })
+    .upload(fileName, uint8Array, { contentType: mimeType, upsert: false })
 
   if (uploadError) {
-    console.error('Upload error:', uploadError)
-    return { success: false, error: 'Échec de l\'upload de la photo. Réessayez.' }
+    console.error('Upload error details:', {
+      error: uploadError,
+      fileName,
+      fileSize: uint8Array.length,
+      mimeType,
+      userId: user.id
+    })
+    return { success: false, error: `Upload failed: ${uploadError.message}` }
   }
 
   const { data: urlData } = supabase.storage
