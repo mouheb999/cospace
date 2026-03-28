@@ -151,16 +151,16 @@ ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
 -- =============================================
 -- PROFILES POLICIES
 -- =============================================
-CREATE POLICY "Users can view their own profile"
+CREATE POLICY "Authenticated users can view all profiles"
   ON profiles FOR SELECT
-  USING (auth.uid() = id);
+  USING (auth.uid() IS NOT NULL);
 
 CREATE POLICY "Users can update their own profile"
   ON profiles FOR UPDATE
   USING (auth.uid() = id);
 
-CREATE POLICY "Admins can view all profiles"
-  ON profiles FOR SELECT
+CREATE POLICY "Admins can update all profiles"
+  ON profiles FOR UPDATE
   USING (
     EXISTS (
       SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'
