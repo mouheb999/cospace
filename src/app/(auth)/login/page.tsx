@@ -44,7 +44,7 @@ function LoginForm() {
 
       if (data.user && data.session) {
         // Redirect - middleware will route to correct dashboard based on role
-        router.push(redirectTo || '/')
+        router.push(redirectTo || '/dashboard')
         router.refresh()
         return
       }
