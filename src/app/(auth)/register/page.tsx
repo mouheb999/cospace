@@ -202,6 +202,8 @@ export default function RegisterPage() {
                 placeholder="Min. 8 caractères"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                autoComplete="new-password"
+                helperText="Minimum 8 caractères requis"
                 required
               />
               
@@ -212,6 +214,7 @@ export default function RegisterPage() {
                   placeholder="••••••••"
                   value={adminCode}
                   onChange={(e) => setAdminCode(e.target.value)}
+                  autoComplete="off"
                   required
                 />
               )}
@@ -264,7 +267,7 @@ export default function RegisterPage() {
 
             <p className="text-center text-[0.78rem] text-muted mt-6">
               En vous inscrivant, vous acceptez nos{' '}
-              <a className="text-teal hover:underline cursor-pointer">conditions d&apos;utilisation</a>.
+              <Link href="/terms" className="text-teal hover:underline">conditions d'utilisation</Link>.
             </p>
           </div>
         </div>

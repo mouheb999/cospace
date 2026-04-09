@@ -138,12 +138,13 @@ function LoginForm() {
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
                 required
               />
               <div className="flex justify-end">
-                <a className="text-[0.78rem] text-teal cursor-pointer hover:underline">
+                <Link href="/forgot-password" className="text-[0.78rem] text-teal cursor-pointer hover:underline">
                   Mot de passe oublié ?
-                </a>
+                </Link>
               </div>
 
               {error && (
