@@ -7,7 +7,7 @@ import { LiveDot } from '@/components/decorations/Decorations'
 import { CheckinTab } from '@/components/CheckinTab'
 import { 
   Home, Camera, CreditCard, TrendingUp, User, 
-  ChevronRight, Copy, LogOut, Bell, Settings, Loader2, Check, Edit3, Calendar, MessageCircle
+  ChevronRight, Copy, LogOut, Bell, Settings, Loader2, Check, Edit3, Calendar, MessageCircle, Send
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth/context'
 import { useProfile } from '@/hooks/useProfile'
@@ -63,6 +63,7 @@ export default function ClientDashboard() {
   const [showNotifSettings, setShowNotifSettings] = useState(false)
   const [unreadMessages, setUnreadMessages] = useState(0)
   const [showSubDetails, setShowSubDetails] = useState(false)
+  const [chatActive, setChatActive] = useState(false)
   const [notifPrefs, setNotifPrefs] = useState({
     streak_reminder: true,
     checkin_confirmation: true,
@@ -245,12 +246,34 @@ export default function ClientDashboard() {
     return () => { supabase.removeChannel(channel) }
   }, [user])
 
-  // Clear unread count when switching to chat tab
+  // Clear unread count when switching to chat tab, reset chatActive when leaving
   useEffect(() => {
     if (activeTab === 'chat') {
       setUnreadMessages(0)
+    } else {
+      setChatActive(false)
     }
   }, [activeTab])
+
+  // Fetch responsable info for the assistance screen
+  const [responsableInfo, setResponsableInfo] = useState<{ first_name: string; last_name: string; avatar_url: string | null; is_online: boolean; last_seen: string | null } | null>(null)
+  useEffect(() => {
+    const fetchResp = async () => {
+      const { data } = await supabase
+        .from('profiles')
+        .select('first_name, last_name, avatar_url, is_online, last_seen')
+        .eq('role', 'responsable')
+        .limit(1)
+      if (data && data.length > 0) {
+        const r = data[0] as any
+        const online = r.last_seen && (Date.now() - new Date(r.last_seen).getTime() < 2 * 60 * 1000)
+        setResponsableInfo({ ...r, is_online: online })
+      }
+    }
+    fetchResp()
+    const interval = setInterval(fetchResp, 30000)
+    return () => clearInterval(interval)
+  }, [])
 
   // Track online status with heartbeat + visibility API
   useEffect(() => {
@@ -733,10 +756,109 @@ export default function ClientDashboard() {
           <CheckinTab />
         )}
 
-        {/* Chat Tab */}
-        {activeTab === 'chat' && (
+        {/* Assistance / Chat Tab */}
+        {activeTab === 'chat' && !chatActive && (
+          <div className="animate-fade-up">
+            {/* Hero Section */}
+            <div className="text-center mb-6">
+              <div className="w-16 h-16 rounded-2xl bg-teal/10 border border-teal/20 flex items-center justify-center mx-auto mb-4">
+                <MessageCircle size={28} className="text-teal" />
+              </div>
+              <h2 className="font-display text-[1.6rem] tracking-[0.05em] mb-1">Assistance</h2>
+              <p className="text-[0.78rem] text-muted leading-relaxed max-w-[280px] mx-auto">
+                Besoin d&apos;aide, d&apos;une information ou d&apos;un changement sur votre abonnement ? Contactez directement le responsable.
+              </p>
+            </div>
+
+            {/* Responsable Card */}
+            <div className="bg-surface border border-border rounded-[18px] p-5 mb-4">
+              <div className="flex items-center gap-4 mb-4">
+                {responsableInfo ? (
+                  <>
+                    <div className="relative">
+                      <Avatar name={`${responsableInfo.first_name} ${responsableInfo.last_name}`} size="lg" avatarUrl={responsableInfo.avatar_url || undefined} />
+                      <div className={`absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 border-surface ${responsableInfo.is_online ? 'bg-success' : 'bg-muted/40'}`} />
+                    </div>
+                    <div>
+                      <div className="font-bold text-[1rem]">{responsableInfo.first_name} {responsableInfo.last_name}</div>
+                      <div className="text-[0.72rem] text-muted">Responsable CoSpace</div>
+                      <div className="flex items-center gap-1.5 mt-1">
+                        <div className={`w-2 h-2 rounded-full ${responsableInfo.is_online ? 'bg-success animate-pulse' : 'bg-muted/40'}`} />
+                        <span className={`text-[0.68rem] font-medium ${responsableInfo.is_online ? 'text-success' : 'text-muted'}`}>
+                          {responsableInfo.is_online ? 'Disponible' : 'Indisponible'}
+                        </span>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-[0.85rem] text-muted">Chargement...</div>
+                )}
+              </div>
+
+              <button
+                onClick={() => setChatActive(true)}
+                className="w-full bg-teal text-black rounded-xl py-3 font-bold text-[0.88rem] border-none cursor-pointer hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
+              >
+                <Send size={16} />
+                Démarrer une conversation
+              </button>
+            </div>
+
+            {/* Info Cards */}
+            <div className="flex flex-col gap-2.5">
+              <div className="bg-surface border border-border rounded-[14px] p-4 flex items-start gap-3">
+                <div className="w-9 h-9 rounded-lg bg-teal/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <span className="text-[1rem]">💬</span>
+                </div>
+                <div>
+                  <div className="font-semibold text-[0.82rem] mb-0.5">Messagerie directe</div>
+                  <div className="text-[0.68rem] text-muted leading-relaxed">Vos messages sont privés et visibles uniquement par vous et le responsable.</div>
+                </div>
+              </div>
+
+              <div className="bg-surface border border-border rounded-[14px] p-4 flex items-start gap-3">
+                <div className="w-9 h-9 rounded-lg bg-teal/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <span className="text-[1rem]">🔔</span>
+                </div>
+                <div>
+                  <div className="font-semibold text-[0.82rem] mb-0.5">Notifications</div>
+                  <div className="text-[0.68rem] text-muted leading-relaxed">Vous serez notifié dès qu&apos;une réponse est disponible, même en dehors de l&apos;application.</div>
+                </div>
+              </div>
+
+              <div className="bg-surface border border-border rounded-[14px] p-4 flex items-start gap-3">
+                <div className="w-9 h-9 rounded-lg bg-teal/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <span className="text-[1rem]">⏱️</span>
+                </div>
+                <div>
+                  <div className="font-semibold text-[0.82rem] mb-0.5">Temps de réponse</div>
+                  <div className="text-[0.68rem] text-muted leading-relaxed">Le responsable répond généralement dans les plus brefs délais pendant les heures d&apos;ouverture.</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Unread indicator */}
+            {unreadMessages > 0 && (
+              <button
+                onClick={() => setChatActive(true)}
+                className="mt-4 w-full bg-danger/10 border border-danger/25 rounded-xl p-3.5 flex items-center gap-3 cursor-pointer text-left hover:border-danger/40 transition-colors"
+              >
+                <div className="w-8 h-8 rounded-full bg-danger flex items-center justify-center flex-shrink-0">
+                  <span className="text-white text-[0.7rem] font-bold">{unreadMessages}</span>
+                </div>
+                <div className="flex-1">
+                  <div className="font-semibold text-[0.82rem]">Message{unreadMessages > 1 ? 's' : ''} non lu{unreadMessages > 1 ? 's' : ''}</div>
+                  <div className="text-[0.65rem] text-muted">Appuyez pour voir la conversation</div>
+                </div>
+                <ChevronRight size={16} className="text-muted" />
+              </button>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'chat' && chatActive && (
           <div className="animate-fade-up -mx-5 -my-4">
-            <Chat isOpen={true} onClose={() => setActiveTab('home')} />
+            <Chat isOpen={true} onClose={() => setChatActive(false)} />
           </div>
         )}
 
