@@ -20,6 +20,7 @@ CREATE TABLE profiles (
   current_streak INTEGER DEFAULT 0,
   longest_streak INTEGER DEFAULT 0,
   last_checkin TIMESTAMPTZ,
+  status_message TEXT CHECK (char_length(status_message) <= 120),
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button, Card, Badge, Avatar } from '@/components/ui'
 import { LiveDot } from '@/components/decorations/Decorations'
@@ -34,13 +34,6 @@ interface Announcement {
   created_at: string
 }
 
-interface LeaderboardUser {
-  rank: number
-  name: string
-  streak: number
-  checkedToday: boolean
-  isCurrentUser?: boolean
-}
 
 export default function ClientDashboard() {
   const router = useRouter()
@@ -57,6 +50,8 @@ export default function ClientDashboard() {
   const [error, setError] = useState<string | null>(null)
   const [editingProfile, setEditingProfile] = useState(false)
   const [editForm, setEditForm] = useState({ first_name: '', last_name: '' })
+  const [statusMessage, setStatusMessage] = useState('')
+  const [savingMessage, setSavingMessage] = useState(false)
 
   const supabase = createClient()
 
@@ -110,6 +105,13 @@ export default function ClientDashboard() {
 
     fetchData()
   }, [user])
+
+  // Init status message from profile
+  useEffect(() => {
+    if (profile?.status_message !== undefined) {
+      setStatusMessage(profile.status_message || '')
+    }
+  }, [profile?.status_message])
 
   // Redirect if not logged in
   useEffect(() => {
@@ -173,6 +175,18 @@ export default function ClientDashboard() {
       await uploadAvatar(file)
     } catch (err) {
       console.error('Error uploading avatar:', err)
+    }
+  }
+
+  const handleSaveStatusMessage = async () => {
+    const sanitized = statusMessage.trim().slice(0, 120)
+    setSavingMessage(true)
+    try {
+      await updateProfile({ status_message: sanitized } as any)
+    } catch (err) {
+      console.error('Error saving status message:', err)
+    } finally {
+      setSavingMessage(false)
     }
   }
 
@@ -262,12 +276,20 @@ export default function ClientDashboard() {
             </div>
 
             {/* Streak Card */}
-            <Card variant="streak" className="mb-4 flex items-center justify-between">
+            <Card variant="streak" className={`mb-4 flex items-center justify-between ${streakData?.status === 'warning' ? 'border-yellow-bright/40' : ''}`}>
               <div className="flex items-center gap-4">
-                <span className="text-[2.4rem] animate-flame">🔥</span>
+                <span className="text-[2.4rem] animate-flame">
+                  {streakData?.status === 'warning' ? '⏳' : streakData?.status === 'lost' ? '❌' : '🔥'}
+                </span>
                 <div>
                   <div className="font-display text-[2.8rem] text-teal leading-none">{streakData?.currentStreak || 0}</div>
-                  <div className="text-[0.7rem] text-muted uppercase tracking-[0.1em]">Jours de Streak</div>
+                  <div className="text-[0.7rem] text-muted uppercase tracking-[0.1em]">
+                    {streakData?.status === 'warning' 
+                      ? `⚠️ Streak expire dans ~${streakData.hoursRemaining}h`
+                      : streakData?.status === 'lost'
+                        ? 'Streak perdu — faites un check-in !'
+                        : 'Jours de Streak'}
+                  </div>
                 </div>
               </div>
               <div className="text-right">
@@ -499,14 +521,18 @@ export default function ClientDashboard() {
                     {lbUser.rank}
                   </div>
                   <Avatar name={lbUser.name} size="sm" />
-                  <div className="flex-1">
+                  <div className="flex-1 min-w-0">
                     <div className="font-bold text-[0.88rem] flex items-center gap-2">
                       <span className={lbUser.isCurrentUser ? 'text-teal' : ''}>
                         {lbUser.name}
                         {lbUser.isCurrentUser && <span className="text-[0.65rem] text-muted font-normal ml-1">(vous)</span>}
                       </span>
                       {lbUser.rank === 1 && <span className="animate-flame text-[0.9rem]">🔥</span>}
+                      {lbUser.streakStatus === 'warning' && <span className="text-[0.8rem]" title="Streak en danger">⏳</span>}
                     </div>
+                    {lbUser.statusMessage && (
+                      <div className="text-[0.68rem] text-muted/70 truncate italic">{lbUser.statusMessage}</div>
+                    )}
                     <div className="text-[0.7rem] text-muted">{lbUser.streak} jours de streak</div>
                   </div>
                   <div className="font-display text-[1.4rem] text-teal">{lbUser.streak}</div>
@@ -589,6 +615,29 @@ export default function ClientDashboard() {
                   </div>
                 </div>
               </div>
+            </div>
+
+            {/* Status Message */}
+            <div className="bg-surface border border-border rounded-[14px] p-4 mb-4">
+              <div className="text-[0.7rem] font-bold tracking-[0.1em] uppercase text-muted mb-2">Message de statut (classement)</div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={statusMessage}
+                  onChange={(e) => setStatusMessage(e.target.value.slice(0, 120))}
+                  placeholder="Ex: En mode productivité maximale 💪"
+                  className="bg-surface2 border border-border rounded-lg px-3 py-2 text-sm flex-1 text-white placeholder:text-white/25 outline-none focus:border-teal"
+                  maxLength={120}
+                />
+                <button
+                  onClick={handleSaveStatusMessage}
+                  disabled={savingMessage}
+                  className="bg-teal text-black px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50 flex-shrink-0"
+                >
+                  {savingMessage ? '...' : 'Sauver'}
+                </button>
+              </div>
+              <div className="text-[0.6rem] text-muted mt-1.5">{statusMessage.length}/120 · Visible sur le classement</div>
             </div>
 
             {/* Stats Grid */}

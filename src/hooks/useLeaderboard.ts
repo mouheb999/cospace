@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuth } from '@/lib/auth/context'
 import { createClient } from '@/lib/supabase/client'
+import { STREAK_LOST_HOURS, getStreakTiming, type StreakStatus } from '@/lib/streak'
 
 export interface LeaderboardUser {
   rank: number
@@ -11,6 +12,8 @@ export interface LeaderboardUser {
   streak: number
   checkedToday: boolean
   isCurrentUser?: boolean
+  statusMessage?: string
+  streakStatus: StreakStatus
 }
 
 export function useLeaderboard(limit: number = 10) {
@@ -19,28 +22,37 @@ export function useLeaderboard(limit: number = 10) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const supabase = createClient()
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
 
-  const fetchLeaderboard = async () => {
+  const fetchLeaderboard = useCallback(async () => {
     try {
-      // Fetch top users by longest_streak, then current_streak
-      const { data: profiles, error } = await supabase
+      const cutoff = new Date(Date.now() - STREAK_LOST_HOURS * 60 * 60 * 1000).toISOString()
+
+      const { data: profiles, error: fetchError } = await supabase
         .from('profiles')
-        .select('id, first_name, last_name, longest_streak, current_streak, last_checkin')
-        .order('longest_streak', { ascending: false })
+        .select('id, first_name, last_name, longest_streak, current_streak, last_checkin, status_message')
+        .gt('current_streak', 0)
+        .gte('last_checkin', cutoff)
         .order('current_streak', { ascending: false })
+        .order('longest_streak', { ascending: false })
         .limit(limit)
 
-      if (error) throw error
+      if (fetchError) throw fetchError
 
       const today = new Date().toDateString()
-      const mapped = (profiles || []).map((p: any, i: number) => ({
-        rank: i + 1,
-        id: p.id,
-        name: `${p.first_name} ${p.last_name?.[0] || ''}.`,
-        streak: Math.max(p.longest_streak || 0, p.current_streak || 0),
-        checkedToday: p.last_checkin ? new Date(p.last_checkin).toDateString() === today : false,
-        isCurrentUser: p.id === user?.id
-      }))
+      const mapped = (profiles || []).map((p: any, i: number) => {
+        const timing = getStreakTiming(p.last_checkin ? new Date(p.last_checkin) : null)
+        return {
+          rank: i + 1,
+          id: p.id,
+          name: `${p.first_name} ${p.last_name?.[0] || ''}.`,
+          streak: p.current_streak || 0,
+          checkedToday: p.last_checkin ? new Date(p.last_checkin).toDateString() === today : false,
+          isCurrentUser: p.id === user?.id,
+          statusMessage: p.status_message || undefined,
+          streakStatus: timing.status,
+        }
+      })
 
       setLeaderboard(mapped)
     } catch (err) {
@@ -49,20 +61,34 @@ export function useLeaderboard(limit: number = 10) {
     } finally {
       setLoading(false)
     }
-  }
-
-  const refreshLeaderboard = () => {
-    fetchLeaderboard()
-  }
+  }, [user, limit])
 
   useEffect(() => {
     fetchLeaderboard()
-  }, [user, limit])
+
+    const channel = supabase
+      .channel('leaderboard-realtime')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'checkins' }, () => {
+        fetchLeaderboard()
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, () => {
+        fetchLeaderboard()
+      })
+      .subscribe()
+
+    channelRef.current = channel
+
+    return () => {
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current)
+      }
+    }
+  }, [user, limit, fetchLeaderboard])
 
   return {
     leaderboard,
     loading,
     error,
-    refreshLeaderboard,
+    refreshLeaderboard: fetchLeaderboard,
   }
 }

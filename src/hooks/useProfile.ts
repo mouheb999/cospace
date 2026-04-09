@@ -15,6 +15,7 @@ export interface Profile {
   current_streak: number
   longest_streak: number
   last_checkin?: string
+  status_message?: string
   created_at: string
   updated_at: string
 }

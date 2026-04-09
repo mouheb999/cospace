@@ -1,12 +1,16 @@
 import { differenceInDays, startOfDay, isToday, isYesterday, subDays, format } from 'date-fns'
 import { fr } from 'date-fns/locale'
 
+export type StreakStatus = 'active' | 'warning' | 'lost' | 'none'
+
 export interface StreakData {
   currentStreak: number
   bestStreak: number
   checkedInToday: boolean
   lastCheckIn: Date | null
   weekProgress: boolean[]
+  status: StreakStatus
+  hoursRemaining: number | null
 }
 
 export function calculateStreak(checkInDates: Date[]): StreakData {
@@ -17,6 +21,8 @@ export function calculateStreak(checkInDates: Date[]): StreakData {
       checkedInToday: false,
       lastCheckIn: null,
       weekProgress: Array(7).fill(false),
+      status: 'none',
+      hoursRemaining: null,
     }
   }
 
@@ -68,13 +74,46 @@ export function calculateStreak(checkInDates: Date[]): StreakData {
     weekProgress.push(hasCheckIn)
   }
 
+  const streakTiming = getStreakTiming(lastCheckIn)
+
   return {
-    currentStreak,
+    currentStreak: streakTiming.status === 'lost' ? 0 : currentStreak,
     bestStreak,
     checkedInToday,
     lastCheckIn,
     weekProgress,
+    status: currentStreak === 0 && !checkedInToday ? 'none' : streakTiming.status,
+    hoursRemaining: streakTiming.hoursRemaining,
   }
+}
+
+export const STREAK_WARNING_HOURS = 22
+export const STREAK_LOST_HOURS = 26
+
+export function getStreakTiming(lastCheckIn: Date | null): { status: StreakStatus; hoursRemaining: number | null; hoursSince: number | null } {
+  if (!lastCheckIn) return { status: 'none', hoursRemaining: null, hoursSince: null }
+
+  const now = new Date()
+  const diffMs = now.getTime() - new Date(lastCheckIn).getTime()
+  const hoursSince = diffMs / (1000 * 60 * 60)
+
+  if (hoursSince >= STREAK_LOST_HOURS) {
+    return { status: 'lost', hoursRemaining: 0, hoursSince }
+  }
+
+  if (hoursSince >= STREAK_WARNING_HOURS) {
+    const hoursRemaining = Math.max(0, STREAK_LOST_HOURS - hoursSince)
+    return { status: 'warning', hoursRemaining: Math.round(hoursRemaining * 10) / 10, hoursSince }
+  }
+
+  const hoursRemaining = Math.max(0, STREAK_WARNING_HOURS - hoursSince)
+  return { status: 'active', hoursRemaining: Math.round(hoursRemaining * 10) / 10, hoursSince }
+}
+
+export function isStreakAlive(lastCheckin: Date | string | null): boolean {
+  if (!lastCheckin) return false
+  const diffMs = Date.now() - new Date(lastCheckin).getTime()
+  return diffMs < STREAK_LOST_HOURS * 60 * 60 * 1000
 }
 
 export function getNextMilestone(currentStreak: number): { days: number; reward: string } {

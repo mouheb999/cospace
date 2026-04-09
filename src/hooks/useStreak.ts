@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '@/lib/auth/context'
 import { createClient } from '@/lib/supabase/client'
-import { calculateStreak, StreakData } from '@/lib/streak'
+import { calculateStreak, getStreakTiming, type StreakData, type StreakStatus } from '@/lib/streak'
 
 export function useStreak() {
   const { user } = useAuth()
@@ -12,7 +12,7 @@ export function useStreak() {
   const [error, setError] = useState<string | null>(null)
   const supabase = createClient()
 
-  const fetchStreakData = async () => {
+  const fetchStreakData = useCallback(async () => {
     if (!user) {
       setStreakData(null)
       setLoading(false)
@@ -20,61 +20,45 @@ export function useStreak() {
     }
 
     try {
-      // Fetch all check-ins for this user
-      const { data: checkins, error } = await supabase
+      const { data: checkins, error: fetchError } = await supabase
         .from('checkins')
         .select('checked_in_at')
         .eq('user_id', user.id)
         .order('checked_in_at', { ascending: true })
 
-      if (error) throw error
+      if (fetchError) throw fetchError
 
-      // Convert to Date array and calculate streak
       const checkInDates = (checkins || []).map(c => new Date((c as any).checked_in_at))
       const streak = calculateStreak(checkInDates)
-      
+
       setStreakData(streak)
 
-      // Update profile with current streak data
-      await updateProfileStreak(streak.currentStreak, streak.bestStreak, checkInDates[0])
+      // If streak is lost, reset current_streak to 0 in profile
+      if (streak.status === 'lost') {
+        await supabase
+          .from('profiles')
+          .update({
+            current_streak: 0,
+            updated_at: new Date().toISOString(),
+          } as never)
+          .eq('id', user.id)
+      }
     } catch (err) {
       console.error('Error fetching streak data:', err)
       setError(err instanceof Error ? err.message : 'Failed to load streak data')
     } finally {
       setLoading(false)
     }
-  }
-
-  const updateProfileStreak = async (currentStreak: number, longestStreak: number, lastCheckIn?: Date) => {
-    if (!user) return
-
-    try {
-      await supabase
-        .from('profiles')
-        .update({
-          current_streak: currentStreak,
-          longest_streak: longestStreak,
-          last_checkin: lastCheckIn?.toISOString(),
-          updated_at: new Date().toISOString(),
-        } as never)
-        .eq('id', user.id)
-    } catch (err) {
-      console.error('Error updating profile streak:', err)
-    }
-  }
-
-  const refreshStreak = () => {
-    fetchStreakData()
-  }
+  }, [user])
 
   useEffect(() => {
     fetchStreakData()
-  }, [user])
+  }, [user, fetchStreakData])
 
   return {
     streakData,
     loading,
     error,
-    refreshStreak,
+    refreshStreak: fetchStreakData,
   }
 }

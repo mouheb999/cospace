@@ -104,33 +104,22 @@ export async function submitCheckin(payload: {
     .from('checkins')
     .getPublicUrl(fileName)
 
-  // ── 5. Calculate streak server-side ───────────────────────────────────────
+  // ── 5. Calculate streak server-side (26h window) ─────────────────────────
   const { data: profileData } = await supabase
     .from('profiles')
-    .select('current_streak, longest_streak')
+    .select('current_streak, longest_streak, last_checkin')
     .eq('id', user.id)
     .single()
 
-  const profileTyped = profileData as { current_streak?: number; longest_streak?: number } | null
-
-  const { data: lastCheckinData } = await supabase
-    .from('checkins')
-    .select('checked_in_at')
-    .eq('user_id', user.id)
-    .order('checked_in_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
-  const lastCheckin = lastCheckinData as { checked_in_at: string } | null
+  const profileTyped = profileData as { current_streak?: number; longest_streak?: number; last_checkin?: string } | null
 
   let newStreak = 1
-  if (lastCheckin) {
-    const lastDate = new Date(lastCheckin.checked_in_at).toISOString().split('T')[0]
-    const yesterday = new Date()
-    yesterday.setDate(yesterday.getDate() - 1)
-    const yesterdayStr = yesterday.toISOString().split('T')[0]
-    if (lastDate === yesterdayStr) {
-      newStreak = (profileTyped?.current_streak ?? 0) + 1
+  if (profileTyped?.last_checkin) {
+    const lastTime = new Date(profileTyped.last_checkin).getTime()
+    const hoursSince = (Date.now() - lastTime) / (1000 * 60 * 60)
+
+    if (hoursSince < 26) {
+      newStreak = (profileTyped.current_streak ?? 0) + 1
     }
   }
 
