@@ -35,15 +35,21 @@ export function useProfile() {
     }
 
     try {
-      const { data, error } = await supabase
+      console.log('[Profile] Fetching profile for user:', user.id)
+
+      const { data, error, status } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', user.id)
         .single()
 
+      console.log('[Profile] Response status:', status, 'Data:', data ? 'found' : 'null', 'Error:', error)
+
       if (error) {
+        console.error('[Profile] Full error:', JSON.stringify(error, null, 2))
         // If profile doesn't exist, create one
         if (error.code === 'PGRST116') {
+          console.log('[Profile] Profile not found, creating...')
           await createProfile()
           return
         }
@@ -51,8 +57,8 @@ export function useProfile() {
       }
 
       setProfile(data as Profile)
-    } catch (err) {
-      console.error('Error fetching profile:', err)
+    } catch (err: any) {
+      console.error('[Profile] CATCH error:', err?.message, err?.code, err?.details, err?.hint)
       setError(err instanceof Error ? err.message : 'Failed to load profile')
     } finally {
       setLoading(false)

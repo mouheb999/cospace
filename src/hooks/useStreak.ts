@@ -20,31 +20,42 @@ export function useStreak() {
     }
 
     try {
-      const { data: checkins, error: fetchError } = await supabase
+      console.log('[Streak] Fetching checkins for user:', user.id)
+
+      const { data: checkins, error: fetchError, status } = await supabase
         .from('checkins')
         .select('checked_in_at')
         .eq('user_id', user.id)
         .order('checked_in_at', { ascending: true })
 
-      if (fetchError) throw fetchError
+      console.log('[Streak] Response status:', status, 'Count:', checkins?.length ?? 'null', 'Error:', fetchError)
+
+      if (fetchError) {
+        console.error('[Streak] Full error:', JSON.stringify(fetchError, null, 2))
+        throw fetchError
+      }
 
       const checkInDates = (checkins || []).map(c => new Date((c as any).checked_in_at))
       const streak = calculateStreak(checkInDates)
+
+      console.log('[Streak] Calculated:', { current: streak.currentStreak, best: streak.bestStreak, status: streak.status, hoursRemaining: streak.hoursRemaining })
 
       setStreakData(streak)
 
       // If streak is lost, reset current_streak to 0 in profile
       if (streak.status === 'lost') {
-        await supabase
+        console.log('[Streak] Streak lost, resetting current_streak to 0')
+        const { error: updateError } = await supabase
           .from('profiles')
           .update({
             current_streak: 0,
             updated_at: new Date().toISOString(),
           } as never)
           .eq('id', user.id)
+        if (updateError) console.error('[Streak] Error resetting streak:', JSON.stringify(updateError, null, 2))
       }
-    } catch (err) {
-      console.error('Error fetching streak data:', err)
+    } catch (err: any) {
+      console.error('[Streak] CATCH error:', err?.message, err?.code, err?.details, err?.hint)
       setError(err instanceof Error ? err.message : 'Failed to load streak data')
     } finally {
       setLoading(false)

@@ -29,7 +29,7 @@ interface Membership {
 interface Announcement {
   id: string
   title: string
-  body: string
+  content: string
   is_pinned: boolean
   created_at: string
 }
@@ -65,40 +65,54 @@ export default function ClientDashboard() {
     const fetchData = async () => {
       try {
         // Fetch memberships
-        const { data: membershipData } = await supabase
+        console.log('[Dashboard] Fetching memberships for user:', user.id)
+        const { data: membershipData, error: membershipError, status: mStatus } = await supabase
           .from('memberships')
           .select('*')
           .eq('user_id', user.id)
           .order('created_at', { ascending: false })
 
+        console.log('[Dashboard] Memberships status:', mStatus, 'Count:', membershipData?.length ?? 'null', 'Error:', membershipError)
+        if (membershipError) console.error('[Dashboard] Memberships full error:', JSON.stringify(membershipError, null, 2))
         if (membershipData) setMemberships(membershipData)
 
-        // Fetch announcements
-        const { data: announcementData } = await supabase
-          .from('announcements')
-          .select('*')
-          .eq('is_active', true)
-          .order('is_pinned', { ascending: false })
-          .order('created_at', { ascending: false })
-          .limit(5)
+        // Fetch announcements (table may not exist yet)
+        console.log('[Dashboard] Fetching announcements')
+        try {
+          const { data: announcementData, error: announcementError, status: aStatus } = await supabase
+            .from('announcements')
+            .select('*')
+            .order('is_pinned', { ascending: false })
+            .order('created_at', { ascending: false })
+            .limit(5)
 
-        if (announcementData) setAnnouncements(announcementData)
+          console.log('[Dashboard] Announcements status:', aStatus, 'Count:', announcementData?.length ?? 'null', 'Error:', announcementError)
+          if (announcementError) console.warn('[Dashboard] Announcements table may not exist:', announcementError.message)
+          if (announcementData) setAnnouncements(announcementData)
+        } catch (annErr) {
+          console.warn('[Dashboard] Announcements fetch failed (table may not exist):', annErr)
+        }
 
         // Check if user already checked in today
         const todayStr = new Date().toISOString().split('T')[0]
-        const { data: checkinData } = await supabase
+        console.log('[Dashboard] Checking today checkin for date:', todayStr)
+        const { data: checkinData, error: checkinError, status: cStatus } = await supabase
           .from('checkins')
           .select('image_url, checked_in_at')
           .eq('user_id', user.id)
           .gte('checked_in_at', `${todayStr}T00:00:00Z`)
           .lte('checked_in_at', `${todayStr}T23:59:59Z`)
-          .maybeSingle()
+          .order('checked_in_at', { ascending: false })
+          .limit(1)
 
-        if (checkinData) {
-          setTodayCheckin(checkinData as { image_url: string; checked_in_at: string })
+        console.log('[Dashboard] Today checkin status:', cStatus, 'Data count:', checkinData?.length ?? 'null', 'Error:', checkinError)
+        if (checkinError) console.error('[Dashboard] Checkin full error:', JSON.stringify(checkinError, null, 2))
+
+        if (checkinData && checkinData.length > 0) {
+          setTodayCheckin(checkinData[0] as { image_url: string; checked_in_at: string })
         }
       } catch (err) {
-        console.error('Error fetching data:', err)
+        console.error('[Dashboard] CATCH error:', err)
         setError('Impossible de charger les données. Veuillez réessayer.')
       }
     }
@@ -120,10 +134,31 @@ export default function ClientDashboard() {
     }
   }, [authLoading, user, router])
 
-  if (authLoading || !user || !profile) {
+  if (authLoading || !user) {
     return (
       <div className="min-h-screen bg-bg flex items-center justify-center">
         <div className="text-white">Chargement...</div>
+      </div>
+    )
+  }
+
+  if (!profile && !profileLoading) {
+    return (
+      <div className="min-h-screen bg-bg flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-white mb-2">Erreur de chargement du profil</div>
+          <button onClick={() => window.location.reload()} className="text-teal underline text-sm">
+            Réessayer
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  if (profileLoading || !profile) {
+    return (
+      <div className="min-h-screen bg-bg flex items-center justify-center">
+        <div className="text-white">Chargement du profil...</div>
       </div>
     )
   }
@@ -378,7 +413,7 @@ export default function ClientDashboard() {
                     </div>
                   )}
                   <div className="font-bold text-[0.85rem] mb-1 pr-20">{ann.title}</div>
-                  <div className="text-[0.78rem] text-muted leading-[1.5]">{ann.body}</div>
+                  <div className="text-[0.78rem] text-muted leading-[1.5]">{ann.content}</div>
                   <div className="text-[0.65rem] text-white/20 mt-2">{formatDate(ann.created_at)}</div>
                 </div>
               )) : (

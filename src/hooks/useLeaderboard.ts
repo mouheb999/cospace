@@ -27,8 +27,13 @@ export function useLeaderboard(limit: number = 10) {
   const fetchLeaderboard = useCallback(async () => {
     try {
       const cutoff = new Date(Date.now() - STREAK_LOST_HOURS * 60 * 60 * 1000).toISOString()
+      console.log('[Leaderboard] Fetching with cutoff:', cutoff, 'limit:', limit)
 
-      const { data: profiles, error: fetchError } = await supabase
+      let profiles: any[] | null = null
+      let fetchError: any = null
+
+      // Try with status_message first
+      const res1 = await supabase
         .from('profiles')
         .select('id, first_name, last_name, longest_streak, current_streak, last_checkin, status_message')
         .gt('current_streak', 0)
@@ -37,7 +42,34 @@ export function useLeaderboard(limit: number = 10) {
         .order('longest_streak', { ascending: false })
         .limit(limit)
 
-      if (fetchError) throw fetchError
+      console.log('[Leaderboard] Query 1 status:', res1.status, 'Error:', res1.error)
+
+      if (res1.error) {
+        console.warn('[Leaderboard] Retrying without status_message column...')
+        // Fallback: query without status_message
+        const res2 = await supabase
+          .from('profiles')
+          .select('id, first_name, last_name, longest_streak, current_streak, last_checkin')
+          .gt('current_streak', 0)
+          .gte('last_checkin', cutoff)
+          .order('current_streak', { ascending: false })
+          .order('longest_streak', { ascending: false })
+          .limit(limit)
+
+        console.log('[Leaderboard] Query 2 (fallback) status:', res2.status, 'Error:', res2.error)
+        profiles = res2.data
+        fetchError = res2.error
+      } else {
+        profiles = res1.data
+        fetchError = res1.error
+      }
+
+      console.log('[Leaderboard] Data count:', profiles?.length ?? 'null')
+
+      if (fetchError) {
+        console.error('[Leaderboard] Full error:', JSON.stringify(fetchError, null, 2))
+        throw fetchError
+      }
 
       const today = new Date().toDateString()
       const mapped = (profiles || []).map((p: any, i: number) => {
@@ -54,9 +86,10 @@ export function useLeaderboard(limit: number = 10) {
         }
       })
 
+      console.log('[Leaderboard] Mapped', mapped.length, 'users')
       setLeaderboard(mapped)
-    } catch (err) {
-      console.error('Error fetching leaderboard:', err)
+    } catch (err: any) {
+      console.error('[Leaderboard] CATCH error:', err?.message, err?.code, err?.details, err?.hint)
       setError(err instanceof Error ? err.message : 'Failed to load leaderboard')
     } finally {
       setLoading(false)
