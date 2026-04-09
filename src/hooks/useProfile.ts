@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '@/lib/auth/context'
 import { createClient } from '@/lib/supabase/client'
 
@@ -21,7 +21,7 @@ export interface Profile {
 }
 
 export function useProfile() {
-  const { user } = useAuth()
+  const { user, isLoading: authLoading } = useAuth()
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -29,8 +29,11 @@ export function useProfile() {
 
   const fetchProfile = async () => {
     if (!user) {
-      setProfile(null)
-      setLoading(false)
+      // Don't set loading=false if auth is still loading — wait for user to resolve
+      if (!authLoading) {
+        setProfile(null)
+        setLoading(false)
+      }
       return
     }
 
@@ -144,7 +147,7 @@ export function useProfile() {
 
   useEffect(() => {
     fetchProfile()
-  }, [user])
+  }, [user, authLoading])
 
   return {
     profile,

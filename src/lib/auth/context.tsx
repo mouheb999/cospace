@@ -27,18 +27,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const supabase = createClient();
 
   const fetchProfile = async (userId: string): Promise<Profile | null> => {
-    const { data, error } = await supabase
+    console.log('[Auth] Fetching profile for:', userId);
+    const { data, error, status } = await supabase
       .from('profiles')
       .select('*')
       .eq('id', userId)
-      .maybeSingle();
+      .limit(1);
+
+    console.log('[Auth] Profile fetch status:', status, 'Data:', data?.length ?? 'null', 'Error:', error);
 
     if (error) {
-      console.error('Error fetching profile:', error);
+      console.error('[Auth] Error fetching profile:', JSON.stringify(error, null, 2));
       return null;
     }
 
-    return data as Profile | null;
+    return (data?.[0] as Profile) ?? null;
   };
 
   const refreshProfile = async () => {
@@ -51,22 +54,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const initAuth = async () => {
       try {
-        const { data: { session: currentSession } } = await supabase.auth.getSession();
+        console.log('[Auth] Initializing auth...');
+        const { data: { session: currentSession }, error: sessionError } = await supabase.auth.getSession();
         
+        console.log('[Auth] Session:', currentSession ? 'found' : 'none', 'Error:', sessionError);
+
         if (currentSession?.user) {
           setSession(currentSession);
           setUser(currentSession.user);
           const profileData = await fetchProfile(currentSession.user.id);
           setProfile(profileData);
+          console.log('[Auth] Profile loaded:', profileData ? 'yes' : 'no');
+        } else {
+          console.log('[Auth] No session found');
         }
       } catch (error) {
-        console.error('Auth init error:', error);
+        console.error('[Auth] Init error:', error);
       } finally {
+        console.log('[Auth] Init complete, setting isLoading=false');
         setIsLoading(false);
       }
     };
 
     initAuth();
+
+    // Safety timeout: if auth takes > 5s, stop loading to prevent stuck screen
+    const timeout = setTimeout(() => {
+      setIsLoading((prev) => {
+        if (prev) console.warn('[Auth] Timeout: forcing isLoading=false after 5s');
+        return false;
+      });
+    }, 5000);
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, newSession) => {
@@ -85,6 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     );
 
     return () => {
+      clearTimeout(timeout);
       subscription.unsubscribe();
     };
   }, []);

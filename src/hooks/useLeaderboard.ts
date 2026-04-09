@@ -29,16 +29,21 @@ export function useLeaderboard(limit: number = 10) {
       const cutoff = new Date(Date.now() - STREAK_LOST_HOURS * 60 * 60 * 1000).toISOString()
       console.log('[Leaderboard] Fetching with cutoff:', cutoff, 'limit:', limit)
 
+      // DEBUG: fetch ALL profiles to see raw data
+      const { data: debugProfiles } = await supabase
+        .from('profiles')
+        .select('id, first_name, current_streak, longest_streak, last_checkin')
+        .limit(20)
+      console.log('[Leaderboard] DEBUG all profiles:', JSON.stringify(debugProfiles, null, 2))
+
       let profiles: any[] | null = null
       let fetchError: any = null
 
-      // Fetch users who have checked in recently (within 26h window)
-      // Don't filter by current_streak > 0 since it may be temporarily 0 due to client-side reset
+      // Fetch all profiles that have any streak data, ordered by streak
       const res1 = await supabase
         .from('profiles')
         .select('id, first_name, last_name, longest_streak, current_streak, last_checkin, status_message')
         .not('last_checkin', 'is', null)
-        .gte('last_checkin', cutoff)
         .order('current_streak', { ascending: false })
         .order('longest_streak', { ascending: false })
         .limit(limit)
@@ -51,7 +56,6 @@ export function useLeaderboard(limit: number = 10) {
           .from('profiles')
           .select('id, first_name, last_name, longest_streak, current_streak, last_checkin')
           .not('last_checkin', 'is', null)
-          .gte('last_checkin', cutoff)
           .order('current_streak', { ascending: false })
           .order('longest_streak', { ascending: false })
           .limit(limit)
