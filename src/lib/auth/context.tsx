@@ -23,6 +23,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const supabase = createClient();
 
   useEffect(() => {
+    let initialized = false;
+
     const initAuth = async () => {
       try {
         console.log('[Auth] Initializing auth...');
@@ -39,6 +41,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         console.error('[Auth] Init error:', error);
       } finally {
+        initialized = true;
         console.log('[Auth] Init complete, setting isLoading=false');
         setIsLoading(false);
       }
@@ -48,6 +51,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, newSession) => {
+        // Skip INITIAL_SESSION and SIGNED_IN during init — getSession() already handles it
+        if (!initialized && (event === 'INITIAL_SESSION' || event === 'SIGNED_IN')) {
+          console.log('[Auth] Skipping duplicate event during init:', event);
+          return;
+        }
         console.log('[Auth] State change:', event);
         setSession(newSession);
         setUser(newSession?.user ?? null);

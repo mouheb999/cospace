@@ -29,13 +29,14 @@ export function useProfile() {
 
   const fetchProfile = async () => {
     if (!user) {
-      // Don't set loading=false if auth is still loading — wait for user to resolve
       if (!authLoading) {
         setProfile(null)
         setLoading(false)
       }
       return
     }
+
+    setLoading(true)
 
     try {
       console.log('[Profile] Fetching profile for user:', user.id)
@@ -74,6 +75,7 @@ export function useProfile() {
     const emailPrefix = user.email?.split('@')[0] || 'user'
     const randomSuffix = Math.floor(Math.random() * 1000)
 
+    console.log('[Profile] Creating profile for user:', user.id, user.email)
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -88,12 +90,18 @@ export function useProfile() {
         .select()
         .single()
 
-      if (error) throw error
+      if (error) {
+        console.error('[Profile] Create error:', JSON.stringify(error, null, 2))
+        throw error
+      }
 
+      console.log('[Profile] Created successfully:', data)
       setProfile(data as Profile)
-    } catch (err) {
-      console.error('Error creating profile:', err)
+    } catch (err: any) {
+      console.error('[Profile] Create CATCH:', err?.message, err?.code)
       setError(err instanceof Error ? err.message : 'Failed to create profile')
+    } finally {
+      setLoading(false)
     }
   }
 

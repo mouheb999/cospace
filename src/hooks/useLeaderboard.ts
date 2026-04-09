@@ -27,20 +27,8 @@ export function useLeaderboard(limit: number = 10) {
   const fetchLeaderboard = useCallback(async () => {
     try {
       const cutoff = new Date(Date.now() - STREAK_LOST_HOURS * 60 * 60 * 1000).toISOString()
-      console.log('[Leaderboard] Fetching with cutoff:', cutoff, 'limit:', limit)
 
-      // DEBUG: fetch ALL profiles to see raw data
-      const { data: debugProfiles } = await supabase
-        .from('profiles')
-        .select('id, first_name, current_streak, longest_streak, last_checkin')
-        .limit(20)
-      console.log('[Leaderboard] DEBUG all profiles:', JSON.stringify(debugProfiles, null, 2))
-
-      let profiles: any[] | null = null
-      let fetchError: any = null
-
-      // Fetch all profiles that have any streak data, ordered by streak
-      const res1 = await supabase
+      const { data: profiles, error: fetchError } = await supabase
         .from('profiles')
         .select('id, first_name, last_name, longest_streak, current_streak, last_checkin, status_message')
         .not('last_checkin', 'is', null)
@@ -48,27 +36,7 @@ export function useLeaderboard(limit: number = 10) {
         .order('longest_streak', { ascending: false })
         .limit(limit)
 
-      console.log('[Leaderboard] Query 1 status:', res1.status, 'Error:', res1.error)
-
-      if (res1.error) {
-        console.warn('[Leaderboard] Retrying without status_message column...')
-        const res2 = await supabase
-          .from('profiles')
-          .select('id, first_name, last_name, longest_streak, current_streak, last_checkin')
-          .not('last_checkin', 'is', null)
-          .order('current_streak', { ascending: false })
-          .order('longest_streak', { ascending: false })
-          .limit(limit)
-
-        console.log('[Leaderboard] Query 2 (fallback) status:', res2.status, 'Error:', res2.error)
-        profiles = res2.data
-        fetchError = res2.error
-      } else {
-        profiles = res1.data
-        fetchError = res1.error
-      }
-
-      console.log('[Leaderboard] Data count:', profiles?.length ?? 'null')
+      console.log('[Leaderboard] Fetched', profiles?.length ?? 0, 'users')
 
       if (fetchError) {
         console.error('[Leaderboard] Full error:', JSON.stringify(fetchError, null, 2))
