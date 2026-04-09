@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import { AuthProvider } from '@/lib/auth/context'
 import { ToastProvider } from '@/components/ui/Toast'
 import { ServiceWorkerRegistration } from '@/components/ServiceWorkerRegistration'
+import { InstallPrompt } from '@/components/InstallPrompt'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -43,6 +44,7 @@ export default function RootLayout({
           </ToastProvider>
         </AuthProvider>
         <ServiceWorkerRegistration />
+        <InstallPrompt />
       </body>
     </html>
   )
