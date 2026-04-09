@@ -17,7 +17,7 @@ interface Message {
 
 interface ChatProps {
   isOpen: boolean
-  onClose: () => void
+  onClose?: () => void
 }
 
 export function Chat({ isOpen, onClose }: ChatProps) {
@@ -163,9 +163,9 @@ export function Chat({ isOpen, onClose }: ChatProps) {
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-[300] flex flex-col bg-bg/98 backdrop-blur-xl animate-fade-up">
+    <div className="flex flex-col h-[calc(100vh-130px)] bg-bg">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-surface/80 backdrop-blur-xl">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-surface">
         <div className="flex items-center gap-3">
           {responsable ? (
             <>
@@ -190,12 +190,14 @@ export function Chat({ isOpen, onClose }: ChatProps) {
             <div className="text-[0.85rem] text-muted">Chargement...</div>
           )}
         </div>
-        <button
-          onClick={onClose}
-          className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface2 transition-colors bg-transparent border-none cursor-pointer text-muted hover:text-white"
-        >
-          <X size={18} />
-        </button>
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface2 transition-colors bg-transparent border-none cursor-pointer text-muted hover:text-white"
+          >
+            <X size={18} />
+          </button>
+        )}
       </div>
 
       {/* Messages */}
@@ -242,7 +244,7 @@ export function Chat({ isOpen, onClose }: ChatProps) {
 
       {/* Input */}
       {responsable && (
-        <div className="px-4 py-3 border-t border-border bg-surface/80 backdrop-blur-xl pb-[max(12px,env(safe-area-inset-bottom))]">
+        <div className="px-4 py-3 border-t border-border bg-surface">
           <div className="flex items-center gap-2">
             <input
               ref={inputRef}

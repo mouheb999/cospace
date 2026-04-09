@@ -16,7 +16,7 @@ import { useLeaderboard } from '@/hooks/useLeaderboard'
 import { createClient } from '@/lib/supabase/client'
 import { Chat } from '@/components/Chat'
 
-type TabType = 'home' | 'checkin' | 'sub' | 'rank' | 'profile'
+type TabType = 'home' | 'checkin' | 'chat' | 'rank' | 'profile'
 
 interface Membership {
   id: string
@@ -61,7 +61,8 @@ export default function ClientDashboard() {
   const [checkinDates, setCheckinDates] = useState<Set<string>>(new Set())
   const [totalCheckins, setTotalCheckins] = useState(0)
   const [showNotifSettings, setShowNotifSettings] = useState(false)
-  const [chatOpen, setChatOpen] = useState(false)
+  const [unreadMessages, setUnreadMessages] = useState(0)
+  const [showSubDetails, setShowSubDetails] = useState(false)
   const [notifPrefs, setNotifPrefs] = useState({
     streak_reminder: true,
     checkin_confirmation: true,
@@ -197,6 +198,59 @@ export default function ClientDashboard() {
   const handleOnboardingSkip = () => {
     setShowOnboarding(false)
   }
+
+  // Unread messages count + push notification permission + realtime notifications
+  useEffect(() => {
+    if (!user) return
+
+    // Request notification permission
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission()
+    }
+
+    // Fetch initial unread count
+    const fetchUnread = async () => {
+      const { count } = await supabase
+        .from('messages')
+        .select('*', { count: 'exact', head: true })
+        .eq('receiver_id', user.id)
+        .eq('is_read', false)
+      setUnreadMessages(count || 0)
+    }
+    fetchUnread()
+
+    // Subscribe to new messages for notifications + badge
+    const channel = supabase
+      .channel('unread-notif')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+        const msg = payload.new as { sender_id: string; receiver_id: string; content: string }
+        if (msg.receiver_id === user.id) {
+          setUnreadMessages((prev) => prev + 1)
+          // Browser push notification
+          if ('Notification' in window && Notification.permission === 'granted' && document.visibilityState === 'hidden') {
+            new Notification('CoSpace — Nouveau message', {
+              body: msg.content.length > 80 ? msg.content.slice(0, 80) + '…' : msg.content,
+              icon: '/icons/icon-192x192.png',
+              tag: 'chat-message',
+            })
+          }
+        }
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, () => {
+        // Refetch unread on any update (e.g. messages marked as read)
+        fetchUnread()
+      })
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [user])
+
+  // Clear unread count when switching to chat tab
+  useEffect(() => {
+    if (activeTab === 'chat') {
+      setUnreadMessages(0)
+    }
+  }, [activeTab])
 
   // Track online status with heartbeat + visibility API
   useEffect(() => {
@@ -423,7 +477,7 @@ export default function ClientDashboard() {
   const tabs = [
     { id: 'home' as const, label: 'Accueil', icon: Home },
     { id: 'checkin' as const, label: 'Check-in', icon: Camera },
-    { id: 'sub' as const, label: 'Abonnement', icon: CreditCard },
+    { id: 'chat' as const, label: 'Chat', icon: MessageCircle },
     { id: 'rank' as const, label: 'Classement', icon: TrendingUp },
     { id: 'profile' as const, label: 'Profil', icon: User },
   ]
@@ -576,20 +630,80 @@ export default function ClientDashboard() {
               </button>
             )}
 
-            {/* Contact Responsable */}
+            {/* Subscription Details (expandable) */}
             <button
-              onClick={() => setChatOpen(true)}
-              className="w-full bg-surface border border-border rounded-[18px] p-4 flex items-center gap-4 mb-5 cursor-pointer hover:border-teal/30 transition-colors text-left"
+              onClick={() => setShowSubDetails(!showSubDetails)}
+              className="w-full bg-surface border border-border rounded-[18px] p-4 flex items-center gap-4 mb-2 cursor-pointer hover:border-teal/30 transition-colors text-left"
             >
               <div className="w-11 h-11 rounded-full bg-teal/15 flex items-center justify-center flex-shrink-0">
-                <MessageCircle size={20} className="text-teal" />
+                <CreditCard size={20} className="text-teal" />
               </div>
               <div className="flex-1 min-w-0">
-                <div className="font-bold text-[0.88rem]">Contacter le responsable</div>
-                <div className="text-[0.68rem] text-muted">Besoin d&apos;aide ? Envoyez un message directement.</div>
+                <div className="font-bold text-[0.88rem]">Mon Abonnement</div>
+                <div className="text-[0.68rem] text-muted">
+                  {activeMembership ? `${activeMembership.plan_type} · ${daysRemaining}j restants` : 'Aucun abonnement actif'}
+                </div>
               </div>
-              <ChevronRight size={16} className="text-muted flex-shrink-0" />
+              <ChevronRight size={16} className={`text-muted flex-shrink-0 transition-transform ${showSubDetails ? 'rotate-90' : ''}`} />
             </button>
+
+            {showSubDetails && (
+              <div className="bg-surface border border-border rounded-[14px] p-4 mb-5 animate-fade-up">
+                {activeMembership ? (
+                  <>
+                    <div className="grid grid-cols-2 gap-3 mb-3">
+                      <div className="bg-surface2 rounded-[10px] p-3">
+                        <div className="text-[0.6rem] text-muted uppercase tracking-[0.1em] mb-1">Début</div>
+                        <div className="font-bold text-[0.85rem]">{formatDate(activeMembership.start_date)}</div>
+                      </div>
+                      <div className="bg-surface2 rounded-[10px] p-3">
+                        <div className="text-[0.6rem] text-muted uppercase tracking-[0.1em] mb-1">Expiration</div>
+                        <div className={`font-bold text-[0.85rem] ${daysRemaining <= 7 ? 'text-yellow-bright' : 'text-lime'}`}>
+                          {formatDate(activeMembership.end_date)}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="bg-white/[0.06] rounded-full h-2 overflow-hidden mb-1.5">
+                      <div
+                        className="h-full bg-gradient-to-r from-teal to-lime rounded-full transition-all duration-500"
+                        style={{ width: `${Math.min(100, Math.max(0, 100 - (daysRemaining / (activeMembership.plan_type === 'monthly' ? 30 : activeMembership.plan_type === 'weekly' ? 7 : 1)) * 100))}%` }}
+                      />
+                    </div>
+                    <div className="flex justify-between text-[0.65rem] text-muted">
+                      <span>{daysRemaining} jours restants</span>
+                      <span>Statut: {activeMembership.status}</span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-center py-4">
+                    <div className="text-[1.5rem] mb-2">📋</div>
+                    <div className="text-[0.85rem] font-bold mb-1">Aucun abonnement actif</div>
+                    <div className="text-[0.72rem] text-muted">Contactez le staff pour souscrire.</div>
+                  </div>
+                )}
+
+                {/* Subscription history */}
+                {memberships.length > 1 && (
+                  <div className="mt-3 pt-3 border-t border-border">
+                    <div className="text-[0.65rem] font-bold tracking-[0.1em] uppercase text-muted mb-2">Historique</div>
+                    {memberships.slice(0, 3).map((item) => (
+                      <div key={item.id} className="flex justify-between items-center py-2 border-b border-border last:border-none text-[0.78rem]">
+                        <div>
+                          <span className="font-semibold capitalize">{item.plan_type}</span>
+                          <span className="text-muted ml-2">{formatDate(item.start_date)}</span>
+                        </div>
+                        <span className={item.status === 'active' ? 'text-teal font-bold' : 'text-muted'}>{item.price_paid} TND</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="mt-3 flex items-start gap-2 text-[0.7rem] text-muted">
+                  <span>ℹ️</span>
+                  <span>Pour changer ou renouveler, adressez-vous au staff à l&apos;accueil.</span>
+                </div>
+              </div>
+            )}
 
             {/* Announcements */}
             <div>
@@ -619,89 +733,10 @@ export default function ClientDashboard() {
           <CheckinTab />
         )}
 
-        {/* Subscription Tab - READ ONLY */}
-        {activeTab === 'sub' && (
-          <div className="animate-fade-up">
-            <h2 className="font-display text-[1.6rem] tracking-[0.06em] mb-4">Mon Abonnement</h2>
-
-            {/* Current Plan Card */}
-            {activeMembership ? (
-              <Card variant="streak" className="mb-4">
-                <div className="flex justify-between items-start mb-4">
-                  <div>
-                    <div className="font-display text-[1.6rem] tracking-[0.06em] text-teal capitalize">{activeMembership.plan_type}</div>
-                    <div className="text-[0.72rem] text-muted">{activeMembership.price_paid} TND</div>
-                  </div>
-                  <Badge variant={daysRemaining <= 7 ? 'default' : 'teal'}>
-                    {daysRemaining <= 0 ? '⚠️ Expiré' : daysRemaining <= 7 ? '⚠️ Expire bientôt' : '✓ Actif'}
-                  </Badge>
-                </div>
-                <div className="grid grid-cols-2 gap-3 mb-4">
-                  <div className="bg-surface2 rounded-[10px] p-3">
-                    <div className="text-[0.6rem] text-muted uppercase tracking-[0.1em] mb-1">Début</div>
-                    <div className="font-bold text-[0.88rem]">{formatDate(activeMembership.start_date)}</div>
-                  </div>
-                  <div className="bg-surface2 rounded-[10px] p-3">
-                    <div className="text-[0.6rem] text-muted uppercase tracking-[0.1em] mb-1">Expiration</div>
-                    <div className={`font-bold text-[0.88rem] ${daysRemaining <= 7 ? 'text-yellow-bright' : 'text-lime'}`}>
-                      {formatDate(activeMembership.end_date)}
-                    </div>
-                  </div>
-                </div>
-                <div className="bg-white/[0.06] rounded-full h-2 overflow-hidden">
-                  <div 
-                    className="h-full bg-gradient-to-r from-teal to-lime rounded-full transition-all duration-500" 
-                    style={{ 
-                      width: `${Math.min(100, Math.max(0, 100 - (daysRemaining / (activeMembership.plan_type === 'monthly' ? 30 : activeMembership.plan_type === 'weekly' ? 7 : 1)) * 100))}%` 
-                    }} 
-                  />
-                </div>
-                <div className="flex justify-between text-[0.65rem] text-muted mt-1.5">
-                  <span>{daysRemaining} jours restants</span>
-                  <span>Statut: {activeMembership.status}</span>
-                </div>
-              </Card>
-            ) : (
-              <Card variant="default" className="mb-4">
-                <div className="text-center py-6">
-                  <div className="text-[2rem] mb-2">📋</div>
-                  <div className="font-display text-[1.2rem] tracking-[0.04em] mb-1">Aucun abonnement actif</div>
-                  <div className="text-[0.78rem] text-muted">Contactez un membre du staff pour souscrire à un plan.</div>
-                </div>
-              </Card>
-            )}
-
-            {/* Info Notice - Read Only */}
-            <div className="bg-surface border border-border rounded-xl p-4 mb-4">
-              <div className="flex items-start gap-3">
-                <span className="text-[1.2rem]">ℹ️</span>
-                <div>
-                  <div className="font-semibold text-[0.85rem] mb-1">Gestion des abonnements</div>
-                  <div className="text-[0.78rem] text-muted leading-relaxed">
-                    Pour changer ou renouveler votre abonnement, veuillez vous adresser à un membre du staff à l&apos;accueil.
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* History */}
-            <div className="text-[0.72rem] font-bold tracking-[0.12em] uppercase text-muted mb-3">Historique des abonnements</div>
-            {memberships.length > 0 ? memberships.map((item) => (
-              <div key={item.id} className="flex justify-between items-center py-3 border-b border-border last:border-none">
-                <div>
-                  <div className="font-semibold text-[0.85rem] capitalize">{item.plan_type}</div>
-                  <div className="text-[0.7rem] text-muted">{formatDate(item.start_date)} – {formatDate(item.end_date)}</div>
-                </div>
-                <div className="text-right">
-                  <div className={`font-bold ${item.status === 'active' ? 'text-teal' : 'text-muted'}`}>{item.price_paid} TND</div>
-                  {item.status === 'active' && <Badge variant="teal">Actif</Badge>}
-                  {item.status === 'expired' && <Badge variant="default">Expiré</Badge>}
-                  {item.status === 'cancelled' && <Badge variant="default">Annulé</Badge>}
-                </div>
-              </div>
-            )) : (
-              <div className="text-muted text-sm py-3">Aucun historique d&apos;abonnement</div>
-            )}
+        {/* Chat Tab */}
+        {activeTab === 'chat' && (
+          <div className="animate-fade-up -mx-5 -my-4">
+            <Chat isOpen={true} onClose={() => setActiveTab('home')} />
           </div>
         )}
 
@@ -1017,20 +1052,24 @@ export default function ClientDashboard() {
         )}
       </main>
 
-      {/* Chat */}
-      <Chat isOpen={chatOpen} onClose={() => setChatOpen(false)} />
-
       {/* Bottom Tabs */}
       <nav className="fixed bottom-0 left-0 right-0 z-[100] bg-bg/97 backdrop-blur-2xl border-t border-border grid grid-cols-5 py-2 pb-[max(8px,env(safe-area-inset-bottom))]">
         {tabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`flex flex-col items-center gap-[3px] py-2 px-1 cursor-pointer transition-all border-none bg-transparent font-sans ${
+            className={`flex flex-col items-center gap-[3px] py-2 px-1 cursor-pointer transition-all border-none bg-transparent font-sans relative ${
               activeTab === tab.id ? 'text-teal' : 'text-muted'
             }`}
           >
-            <tab.icon size={20} className={activeTab === tab.id ? 'scale-110' : ''} />
+            <div className="relative">
+              <tab.icon size={20} className={activeTab === tab.id ? 'scale-110' : ''} />
+              {tab.id === 'chat' && unreadMessages > 0 && activeTab !== 'chat' && (
+                <div className="absolute -top-1.5 -right-2.5 min-w-[16px] h-4 px-1 rounded-full bg-danger text-white text-[0.55rem] font-bold flex items-center justify-center">
+                  {unreadMessages > 9 ? '9+' : unreadMessages}
+                </div>
+              )}
+            </div>
             <span className="text-[0.58rem] font-semibold tracking-[0.04em]">{tab.label}</span>
           </button>
         ))}
