@@ -12,7 +12,7 @@ CREATE TABLE profiles (
   email TEXT NOT NULL UNIQUE,
   first_name TEXT NOT NULL,
   last_name TEXT NOT NULL,
-  role TEXT NOT NULL DEFAULT 'client' CHECK (role IN ('client', 'admin')),
+  role TEXT NOT NULL DEFAULT 'client' CHECK (role IN ('client', 'admin', 'responsable')),
   avatar_url TEXT,
   referral_code TEXT NOT NULL UNIQUE,
   referred_by TEXT,
@@ -21,6 +21,8 @@ CREATE TABLE profiles (
   longest_streak INTEGER DEFAULT 0,
   last_checkin TIMESTAMPTZ,
   status_message TEXT CHECK (char_length(status_message) <= 120),
+  is_online BOOLEAN DEFAULT FALSE,
+  last_seen TIMESTAMPTZ DEFAULT NOW(),
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -127,6 +129,18 @@ CREATE TABLE settings (
 );
 
 -- =============================================
+-- MESSAGES TABLE (User <-> Responsable chat)
+-- =============================================
+CREATE TABLE messages (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  sender_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  receiver_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  content TEXT NOT NULL CHECK (char_length(content) <= 1000),
+  is_read BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- =============================================
 -- INDEXES
 -- =============================================
 CREATE INDEX idx_memberships_user_id ON memberships(user_id);
@@ -136,6 +150,10 @@ CREATE INDEX idx_checkins_date ON checkins(checked_in_at);
 CREATE INDEX idx_income_logs_user_id ON income_logs(user_id);
 CREATE INDEX idx_income_logs_date ON income_logs(created_at);
 CREATE INDEX idx_announcements_pinned ON announcements(is_pinned);
+CREATE INDEX idx_messages_sender ON messages(sender_id);
+CREATE INDEX idx_messages_receiver ON messages(receiver_id);
+CREATE INDEX idx_messages_created ON messages(created_at);
+CREATE INDEX idx_profiles_online ON profiles(is_online);
 
 -- =============================================
 -- ROW LEVEL SECURITY (RLS)
@@ -321,6 +339,31 @@ CREATE POLICY "Admins can update leaderboard settings"
   USING (
     EXISTS (
       SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'
+    )
+  );
+
+-- =============================================
+-- MESSAGES POLICIES
+-- =============================================
+ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view their own messages"
+  ON messages FOR SELECT
+  USING (auth.uid() = sender_id OR auth.uid() = receiver_id);
+
+CREATE POLICY "Users can send messages"
+  ON messages FOR INSERT
+  WITH CHECK (auth.uid() = sender_id);
+
+CREATE POLICY "Receiver can mark messages as read"
+  ON messages FOR UPDATE
+  USING (auth.uid() = receiver_id);
+
+CREATE POLICY "Responsable and admin can view all messages"
+  ON messages FOR SELECT
+  USING (
+    EXISTS (
+      SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('admin', 'responsable')
     )
   );
 

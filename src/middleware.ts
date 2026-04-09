@@ -37,7 +37,8 @@ export async function middleware(request: NextRequest) {
         .select('role')
         .eq('id', user.id)
         .single()
-      const destination = (profile as { role: string } | null)?.role === 'admin' ? '/admin' : '/dashboard'
+      const role = (profile as { role: string } | null)?.role
+      const destination = role === 'admin' ? '/admin' : role === 'responsable' ? '/responsable' : '/dashboard'
       return NextResponse.redirect(new URL(destination, request.url))
     }
     return response
@@ -61,12 +62,22 @@ export async function middleware(request: NextRequest) {
 
   // Client trying to access admin — redirect to their dashboard
   if (pathname.startsWith('/admin') && userRole !== 'admin') {
+    return NextResponse.redirect(new URL(userRole === 'responsable' ? '/responsable' : '/dashboard', request.url))
+  }
+
+  // Client trying to access responsable — redirect to their dashboard
+  if (pathname.startsWith('/responsable') && userRole !== 'responsable' && userRole !== 'admin') {
     return NextResponse.redirect(new URL('/dashboard', request.url))
   }
 
   // Admin trying to access client dashboard — redirect to admin
   if (pathname.startsWith('/dashboard') && userRole === 'admin') {
     return NextResponse.redirect(new URL('/admin', request.url))
+  }
+
+  // Responsable trying to access client dashboard — redirect to responsable
+  if (pathname.startsWith('/dashboard') && userRole === 'responsable') {
+    return NextResponse.redirect(new URL('/responsable', request.url))
   }
 
   return response

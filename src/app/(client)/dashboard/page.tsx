@@ -7,13 +7,14 @@ import { LiveDot } from '@/components/decorations/Decorations'
 import { CheckinTab } from '@/components/CheckinTab'
 import { 
   Home, Camera, CreditCard, TrendingUp, User, 
-  ChevronRight, Copy, LogOut, Bell, Settings, Loader2, Check, Edit3, Calendar
+  ChevronRight, Copy, LogOut, Bell, Settings, Loader2, Check, Edit3, Calendar, MessageCircle
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth/context'
 import { useProfile } from '@/hooks/useProfile'
 import { useStreak } from '@/hooks/useStreak'
 import { useLeaderboard } from '@/hooks/useLeaderboard'
 import { createClient } from '@/lib/supabase/client'
+import { Chat } from '@/components/Chat'
 
 type TabType = 'home' | 'checkin' | 'sub' | 'rank' | 'profile'
 
@@ -60,6 +61,7 @@ export default function ClientDashboard() {
   const [checkinDates, setCheckinDates] = useState<Set<string>>(new Set())
   const [totalCheckins, setTotalCheckins] = useState(0)
   const [showNotifSettings, setShowNotifSettings] = useState(false)
+  const [chatOpen, setChatOpen] = useState(false)
   const [notifPrefs, setNotifPrefs] = useState({
     streak_reminder: true,
     checkin_confirmation: true,
@@ -195,6 +197,20 @@ export default function ClientDashboard() {
   const handleOnboardingSkip = () => {
     setShowOnboarding(false)
   }
+
+  // Track online status
+  useEffect(() => {
+    if (!user) return
+    supabase.from('profiles').update({ is_online: true, last_seen: new Date().toISOString() } as never).eq('id', user.id).then(() => {})
+    const interval = setInterval(() => {
+      supabase.from('profiles').update({ last_seen: new Date().toISOString() } as never).eq('id', user.id).then(() => {})
+    }, 60000)
+    const handleUnload = () => {
+      supabase.from('profiles').update({ is_online: false } as never).eq('id', user.id).then(() => {})
+    }
+    window.addEventListener('beforeunload', handleUnload)
+    return () => { clearInterval(interval); window.removeEventListener('beforeunload', handleUnload); handleUnload() }
+  }, [user])
 
   // Redirect if not logged in
   useEffect(() => {
@@ -366,6 +382,9 @@ export default function ClientDashboard() {
   const daysRemaining = activeMembership 
     ? Math.max(0, Math.ceil((new Date(activeMembership.end_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
     : 0
+  const membershipProgress = activeMembership
+    ? Math.max(2, Math.min(100, Math.round(((Date.now() - new Date(activeMembership.start_date).getTime()) / (new Date(activeMembership.end_date).getTime() - new Date(activeMembership.start_date).getTime())) * 100)))
+    : 0
 
   // Format date helper
   const formatDate = (dateStr: string) => {
@@ -440,7 +459,7 @@ export default function ClientDashboard() {
             {/* Greeting */}
             <div className="mb-5">
               <div className="text-[0.72rem] text-muted uppercase tracking-[0.12em] mb-1">
-                Mardi 24 Mars · 14h32
+                {new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })} · {new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
               </div>
               <h1 className="font-display text-[2rem] tracking-[0.05em]">
                 Bonjour, <span className="text-teal">{profile.first_name}</span> 👋
@@ -496,7 +515,7 @@ export default function ClientDashboard() {
                 Expire le {activeMembership ? formatDate(activeMembership.end_date) : '-'} · {daysRemaining} jours restants
               </div>
               <div className="bg-white/[0.06] rounded-full h-1.5 overflow-hidden">
-                <div className="h-full bg-gradient-to-r from-teal to-lime rounded-full transition-all duration-1000" style={{ width: '3%' }} />
+                <div className="h-full bg-gradient-to-r from-teal to-lime rounded-full transition-all duration-1000" style={{ width: `${membershipProgress}%` }} />
               </div>
               <div className="flex justify-between text-[0.65rem] text-muted mt-1.5">
                 <span>Début {activeMembership ? formatDate(activeMembership.start_date) : '-'}</span>
@@ -536,6 +555,21 @@ export default function ClientDashboard() {
                 <span className="text-[2rem]">📸</span>
               </button>
             )}
+
+            {/* Contact Responsable */}
+            <button
+              onClick={() => setChatOpen(true)}
+              className="w-full bg-surface border border-border rounded-[18px] p-4 flex items-center gap-4 mb-5 cursor-pointer hover:border-teal/30 transition-colors text-left"
+            >
+              <div className="w-11 h-11 rounded-full bg-teal/15 flex items-center justify-center flex-shrink-0">
+                <MessageCircle size={20} className="text-teal" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-bold text-[0.88rem]">Contacter le responsable</div>
+                <div className="text-[0.68rem] text-muted">Besoin d&apos;aide ? Envoyez un message directement.</div>
+              </div>
+              <ChevronRight size={16} className="text-muted flex-shrink-0" />
+            </button>
 
             {/* Announcements */}
             <div>
@@ -962,6 +996,9 @@ export default function ClientDashboard() {
           </div>
         )}
       </main>
+
+      {/* Chat */}
+      <Chat isOpen={chatOpen} onClose={() => setChatOpen(false)} />
 
       {/* Bottom Tabs */}
       <nav className="fixed bottom-0 left-0 right-0 z-[100] bg-bg/97 backdrop-blur-2xl border-t border-border grid grid-cols-5 py-2 pb-[max(8px,env(safe-area-inset-bottom))]">
