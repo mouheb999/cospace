@@ -72,31 +72,49 @@ export default function ResponsableDashboard() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // Set online status
+  // Track online status with heartbeat + visibility API
   useEffect(() => {
     if (!user) return
-    supabase.from('profiles').update({ is_online: true, last_seen: new Date().toISOString() } as never).eq('id', user.id).then(() => {})
 
-    const interval = setInterval(() => {
-      supabase.from('profiles').update({ last_seen: new Date().toISOString() } as never).eq('id', user.id).then(() => {})
-    }, 60000)
-
-    const handleBeforeUnload = () => {
-      supabase.from('profiles').update({ is_online: false } as never).eq('id', user.id).then(() => {})
+    const goOnline = () => {
+      supabase.from('profiles').update({ is_online: true, last_seen: new Date().toISOString() } as never).eq('id', user.id).then(() => {})
     }
-    window.addEventListener('beforeunload', handleBeforeUnload)
+    const goOffline = () => {
+      supabase.from('profiles').update({ is_online: false, last_seen: new Date().toISOString() } as never).eq('id', user.id).then(() => {})
+    }
+
+    goOnline()
+
+    // Heartbeat every 30s
+    const heartbeat = setInterval(goOnline, 30000)
+
+    // Visibility change (works on mobile when switching apps)
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') goOnline()
+      else goOffline()
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+
+    // Fallback for desktop tab close
+    window.addEventListener('beforeunload', goOffline)
 
     return () => {
-      clearInterval(interval)
-      window.removeEventListener('beforeunload', handleBeforeUnload)
-      handleBeforeUnload()
+      clearInterval(heartbeat)
+      document.removeEventListener('visibilitychange', handleVisibility)
+      window.removeEventListener('beforeunload', goOffline)
+      goOffline()
     }
   }, [user])
 
-  // Fetch data
+  // Fetch data + auto-refresh online/conversations every 30s
   useEffect(() => {
     if (!user) return
     fetchAllData()
+    const refresh = setInterval(() => {
+      fetchOnlineUsers()
+      fetchConversations()
+    }, 30000)
+    return () => clearInterval(refresh)
   }, [user])
 
   const fetchAllData = async () => {
@@ -174,13 +192,13 @@ export default function ResponsableDashboard() {
       }
     }
 
-    // Fetch profiles for conversation partners
+    // Fetch profiles for conversation partners (include last_seen for online check)
     const userIds = [...convMap.keys()]
     if (userIds.length === 0) { setConversations([]); return }
 
     const { data: profiles } = await supabase
       .from('profiles')
-      .select('id, first_name, last_name, avatar_url, is_online')
+      .select('id, first_name, last_name, avatar_url, last_seen')
       .in('id', userIds)
 
     const convs: ChatConversation[] = (profiles || []).map((p: any) => {
@@ -190,7 +208,7 @@ export default function ResponsableDashboard() {
         first_name: p.first_name,
         last_name: p.last_name,
         avatar_url: p.avatar_url,
-        is_online: p.is_online || false,
+        is_online: isRecentlyOnline(p.last_seen),
         ...conv,
       }
     }).sort((a: ChatConversation, b: ChatConversation) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime())
@@ -198,12 +216,19 @@ export default function ResponsableDashboard() {
     setConversations(convs)
   }
 
+  const isRecentlyOnline = (lastSeen: string | null) => {
+    if (!lastSeen) return false
+    return Date.now() - new Date(lastSeen).getTime() < 2 * 60 * 1000 // 2 minutes
+  }
+
   const fetchOnlineUsers = async () => {
+    // Fetch users marked online, then filter by last_seen freshness (< 2 min)
+    const twoMinAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString()
     const { data } = await supabase
       .from('profiles')
-      .select('id, first_name, last_name, avatar_url, current_streak, longest_streak, last_checkin')
-      .eq('is_online', true)
+      .select('id, first_name, last_name, avatar_url, current_streak, longest_streak, last_checkin, last_seen')
       .eq('role', 'client')
+      .gte('last_seen', twoMinAgo)
 
     if (data) setOnlineUsers(data as LeaderboardEntry[])
   }

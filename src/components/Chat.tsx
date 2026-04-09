@@ -26,7 +26,7 @@ export function Chat({ isOpen, onClose }: ChatProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [newMessage, setNewMessage] = useState('')
   const [sending, setSending] = useState(false)
-  const [responsable, setResponsable] = useState<{ id: string; first_name: string; last_name: string; avatar_url: string | null; is_online: boolean } | null>(null)
+  const [responsable, setResponsable] = useState<{ id: string; first_name: string; last_name: string; avatar_url: string | null; is_online: boolean; last_seen: string | null } | null>(null)
   const [loading, setLoading] = useState(true)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -38,12 +38,14 @@ export function Chat({ isOpen, onClose }: ChatProps) {
     const fetchResponsable = async () => {
       const { data } = await supabase
         .from('profiles')
-        .select('id, first_name, last_name, avatar_url, is_online')
+        .select('id, first_name, last_name, avatar_url, is_online, last_seen')
         .eq('role', 'responsable')
         .limit(1)
 
       if (data && data.length > 0) {
-        setResponsable(data[0] as any)
+        const r = data[0] as any
+        const recentlyOnline = r.last_seen && (Date.now() - new Date(r.last_seen).getTime() < 2 * 60 * 1000)
+        setResponsable({ ...r, is_online: recentlyOnline })
       }
       setLoading(false)
     }

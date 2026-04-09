@@ -198,18 +198,38 @@ export default function ClientDashboard() {
     setShowOnboarding(false)
   }
 
-  // Track online status
+  // Track online status with heartbeat + visibility API
   useEffect(() => {
     if (!user) return
-    supabase.from('profiles').update({ is_online: true, last_seen: new Date().toISOString() } as never).eq('id', user.id).then(() => {})
-    const interval = setInterval(() => {
-      supabase.from('profiles').update({ last_seen: new Date().toISOString() } as never).eq('id', user.id).then(() => {})
-    }, 60000)
-    const handleUnload = () => {
-      supabase.from('profiles').update({ is_online: false } as never).eq('id', user.id).then(() => {})
+
+    const goOnline = () => {
+      supabase.from('profiles').update({ is_online: true, last_seen: new Date().toISOString() } as never).eq('id', user.id).then(() => {})
     }
-    window.addEventListener('beforeunload', handleUnload)
-    return () => { clearInterval(interval); window.removeEventListener('beforeunload', handleUnload); handleUnload() }
+    const goOffline = () => {
+      supabase.from('profiles').update({ is_online: false, last_seen: new Date().toISOString() } as never).eq('id', user.id).then(() => {})
+    }
+
+    goOnline()
+
+    // Heartbeat every 30s
+    const heartbeat = setInterval(goOnline, 30000)
+
+    // Visibility change (works on mobile when switching apps)
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') goOnline()
+      else goOffline()
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+
+    // Fallback for desktop tab close
+    window.addEventListener('beforeunload', goOffline)
+
+    return () => {
+      clearInterval(heartbeat)
+      document.removeEventListener('visibilitychange', handleVisibility)
+      window.removeEventListener('beforeunload', goOffline)
+      goOffline()
+    }
   }, [user])
 
   // Redirect if not logged in
