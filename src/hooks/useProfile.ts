@@ -132,25 +132,32 @@ export function useProfile() {
   const uploadAvatar = async (file: File) => {
     if (!user) throw new Error('User not authenticated')
 
-    const fileExt = file.name.split('.').pop()
-    const fileName = `avatars/${user.id}.${fileExt}`
+    // Use fixed filename per user (no extension variation) to always overwrite
+    const fileName = `${user.id}/avatar`
 
-    // Upload to storage
+    // Remove old file first to avoid RLS UPDATE issues, then upload fresh
+    await supabase.storage.from('avatars').remove([fileName])
+
     const { error: uploadError } = await supabase.storage
       .from('avatars')
-      .upload(fileName, file, { upsert: true })
+      .upload(fileName, file, { upsert: true, contentType: file.type })
 
-    if (uploadError) throw uploadError
+    if (uploadError) {
+      console.error('[Profile] Avatar upload error:', uploadError)
+      throw uploadError
+    }
 
-    // Get public URL
+    // Get public URL with cache buster to force refresh
     const { data: { publicUrl } } = supabase.storage
       .from('avatars')
       .getPublicUrl(fileName)
 
-    // Update profile
-    await updateProfile({ avatar_url: publicUrl })
+    const urlWithCacheBust = `${publicUrl}?t=${Date.now()}`
 
-    return publicUrl
+    // Update profile
+    await updateProfile({ avatar_url: urlWithCacheBust })
+
+    return urlWithCacheBust
   }
 
   useEffect(() => {

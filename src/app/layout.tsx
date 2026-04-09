@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import { AuthProvider } from '@/lib/auth/context'
 import { ToastProvider } from '@/components/ui/Toast'
+import { ServiceWorkerRegistration } from '@/components/ServiceWorkerRegistration'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -11,6 +12,13 @@ export const metadata: Metadata = {
     capable: true,
     statusBarStyle: 'black-translucent',
     title: 'CoSpace',
+  },
+  icons: {
+    icon: '/favicon.svg',
+    apple: '/icons/icon-192x192.svg',
+  },
+  other: {
+    'mobile-web-app-capable': 'yes',
   },
 }
 
@@ -34,6 +42,7 @@ export default function RootLayout({
             {children}
           </ToastProvider>
         </AuthProvider>
+        <ServiceWorkerRegistration />
       </body>
     </html>
   )
