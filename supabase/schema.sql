@@ -157,7 +157,7 @@ ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
 -- =============================================
 CREATE POLICY "Authenticated users can view all profiles"
   ON profiles FOR SELECT
-  USING (auth.uid() IS NOT NULL);
+  USING (true);
 
 CREATE POLICY "Users can update their own profile"
   ON profiles FOR UPDATE
