@@ -9,6 +9,7 @@ export interface LeaderboardUser {
   rank: number
   id: string
   name: string
+  avatarUrl?: string
   streak: number
   checkedToday: boolean
   isCurrentUser?: boolean
@@ -30,7 +31,7 @@ export function useLeaderboard(limit: number = 10) {
 
       const { data: profiles, error: fetchError } = await supabase
         .from('profiles')
-        .select('id, first_name, last_name, longest_streak, current_streak, last_checkin, status_message')
+        .select('id, first_name, last_name, avatar_url, longest_streak, current_streak, last_checkin, status_message')
         .not('last_checkin', 'is', null)
         .order('current_streak', { ascending: false })
         .order('longest_streak', { ascending: false })
@@ -50,6 +51,7 @@ export function useLeaderboard(limit: number = 10) {
           rank: i + 1,
           id: p.id,
           name: `${p.first_name} ${p.last_name?.[0] || ''}.`,
+          avatarUrl: p.avatar_url || undefined,
           streak: p.current_streak || 0,
           checkedToday: p.last_checkin ? new Date(p.last_checkin).toDateString() === today : false,
           isCurrentUser: p.id === user?.id,

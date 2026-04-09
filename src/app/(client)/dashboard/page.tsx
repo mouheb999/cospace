@@ -52,6 +52,11 @@ export default function ClientDashboard() {
   const [editForm, setEditForm] = useState({ first_name: '', last_name: '' })
   const [statusMessage, setStatusMessage] = useState('')
   const [savingMessage, setSavingMessage] = useState(false)
+  const [showOnboarding, setShowOnboarding] = useState(false)
+  const [onboardingName, setOnboardingName] = useState('')
+  const [onboardingAvatar, setOnboardingAvatar] = useState<File | null>(null)
+  const [onboardingAvatarPreview, setOnboardingAvatarPreview] = useState<string | null>(null)
+  const [onboardingSaving, setOnboardingSaving] = useState(false)
 
   const supabase = createClient()
 
@@ -127,6 +132,48 @@ export default function ClientDashboard() {
     }
   }, [profile?.status_message])
 
+  // Detect first login — show onboarding if profile has no avatar and no last_checkin
+  useEffect(() => {
+    if (profile && !profile.avatar_url && !profile.last_checkin) {
+      setShowOnboarding(true)
+      setOnboardingName(profile.first_name || '')
+    }
+  }, [profile])
+
+  const handleOnboardingAvatar = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setOnboardingAvatar(file)
+    const reader = new FileReader()
+    reader.onload = (ev) => setOnboardingAvatarPreview(ev.target?.result as string)
+    reader.readAsDataURL(file)
+  }
+
+  const handleOnboardingSave = async () => {
+    setOnboardingSaving(true)
+    try {
+      const updates: any = {}
+      if (onboardingName.trim()) {
+        updates.first_name = onboardingName.trim()
+      }
+      if (Object.keys(updates).length > 0) {
+        await updateProfile(updates)
+      }
+      if (onboardingAvatar) {
+        await uploadAvatar(onboardingAvatar)
+      }
+      setShowOnboarding(false)
+    } catch (err) {
+      console.error('Onboarding save error:', err)
+    } finally {
+      setOnboardingSaving(false)
+    }
+  }
+
+  const handleOnboardingSkip = () => {
+    setShowOnboarding(false)
+  }
+
   // Redirect if not logged in
   useEffect(() => {
     if (!authLoading && !user) {
@@ -159,6 +206,73 @@ export default function ClientDashboard() {
     return (
       <div className="min-h-screen bg-bg flex items-center justify-center">
         <div className="text-white">Chargement du profil...</div>
+      </div>
+    )
+  }
+
+  // Onboarding screen for first-time users
+  if (showOnboarding) {
+    return (
+      <div className="min-h-screen bg-bg flex items-center justify-center px-6">
+        <div className="w-full max-w-sm">
+          <div className="text-center mb-8">
+            <div className="text-[2.5rem] mb-3">&#128075;</div>
+            <h1 className="font-display text-[1.8rem] tracking-[0.04em] mb-2">Bienvenue sur CoSpace</h1>
+            <p className="text-muted text-[0.85rem]">Personnalisez votre profil pour commencer</p>
+          </div>
+
+          {/* Avatar picker */}
+          <div className="flex justify-center mb-6">
+            <label className="relative cursor-pointer group">
+              <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-dashed border-border group-hover:border-teal transition-colors flex items-center justify-center bg-surface">
+                {onboardingAvatarPreview ? (
+                  <img src={onboardingAvatarPreview} alt="Avatar" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="text-center">
+                    <Camera size={24} className="text-muted mx-auto mb-1" />
+                    <span className="text-[0.6rem] text-muted">Photo</span>
+                  </div>
+                )}
+              </div>
+              <div className="absolute bottom-0 right-0 w-8 h-8 bg-teal rounded-full flex items-center justify-center">
+                <Camera size={14} className="text-black" />
+              </div>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleOnboardingAvatar}
+                className="hidden"
+              />
+            </label>
+          </div>
+
+          {/* Name input */}
+          <div className="mb-6">
+            <label className="text-[0.72rem] text-muted uppercase tracking-[0.1em] block mb-2">Votre prénom</label>
+            <input
+              type="text"
+              value={onboardingName}
+              onChange={(e) => setOnboardingName(e.target.value)}
+              placeholder="Comment vous appelez-vous ?"
+              className="w-full bg-surface border border-border rounded-xl px-4 py-3 text-white placeholder:text-white/25 outline-none focus:border-teal transition-colors"
+            />
+          </div>
+
+          {/* Buttons */}
+          <button
+            onClick={handleOnboardingSave}
+            disabled={onboardingSaving}
+            className="w-full bg-teal text-black font-bold py-3.5 rounded-xl mb-3 transition-all hover:brightness-110 disabled:opacity-50 border-none cursor-pointer text-[0.9rem]"
+          >
+            {onboardingSaving ? 'Enregistrement...' : 'Continuer'}
+          </button>
+          <button
+            onClick={handleOnboardingSkip}
+            className="w-full bg-transparent border border-border text-muted py-3 rounded-xl transition-colors hover:text-white hover:border-white/30 cursor-pointer text-[0.85rem]"
+          >
+            Passer pour l&apos;instant
+          </button>
+        </div>
       </div>
     )
   }
@@ -260,7 +374,7 @@ export default function ClientDashboard() {
       {/* Header */}
       <header className="bg-bg/95 backdrop-blur-xl border-b border-border px-5 py-3.5 flex items-center justify-between flex-shrink-0 sticky top-0 z-50">
         <div className="flex items-center gap-3">
-          <Avatar name={`${profile.first_name} ${profile.last_name}`} size="md" />
+          <Avatar name={`${profile.first_name} ${profile.last_name}`} size="md" avatarUrl={profile.avatar_url} />
           <div>
             <div className="font-bold text-[0.88rem]">{profile.first_name} {profile.last_name?.[0]}.</div>
             <div className="text-[0.65rem] text-muted">Membre {activeMembership?.plan_type || 'Free'}</div>
@@ -271,10 +385,11 @@ export default function ClientDashboard() {
           <span className="text-[0.72rem] text-muted">Live</span>
           <div className="w-px h-5 bg-border" />
           <button 
-            onClick={() => router.push('/')}
-            className="bg-transparent border-none text-muted cursor-pointer text-[0.78rem] font-sans hover:text-white transition-colors"
+            onClick={handleSignOut}
+            className="bg-transparent border-none text-muted cursor-pointer hover:text-danger transition-colors"
+            title="Se déconnecter"
           >
-            ← Quitter
+            <LogOut size={18} />
           </button>
         </div>
       </header>
@@ -555,7 +670,7 @@ export default function ClientDashboard() {
                   }`}>
                     {lbUser.rank}
                   </div>
-                  <Avatar name={lbUser.name} size="sm" />
+                  <Avatar name={lbUser.name} size="sm" avatarUrl={lbUser.avatarUrl} />
                   <div className="flex-1 min-w-0">
                     <div className="font-bold text-[0.88rem] flex items-center gap-2">
                       <span className={lbUser.isCurrentUser ? 'text-teal' : ''}>
