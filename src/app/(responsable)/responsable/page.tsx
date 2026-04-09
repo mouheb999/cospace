@@ -304,6 +304,7 @@ export default function ResponsableDashboard() {
       setNewMessage(content)
     }
     setSending(false)
+    requestAnimationFrame(() => inputRef.current?.focus())
   }
 
   const handleSignOut = async () => {
@@ -594,6 +595,7 @@ export default function ResponsableDashboard() {
                       className="flex-1 bg-surface2 border border-border rounded-full px-4 py-2.5 text-[0.85rem] text-white placeholder:text-white/25 outline-none focus:border-teal min-w-0"
                     />
                     <button
+                      onMouseDown={(e) => e.preventDefault()}
                       onClick={handleSendMessage}
                       disabled={!newMessage.trim() || sending}
                       className="w-10 h-10 rounded-full bg-teal flex items-center justify-center flex-shrink-0 border-none cursor-pointer disabled:opacity-40"

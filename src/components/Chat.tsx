@@ -139,6 +139,8 @@ export function Chat({ isOpen, onClose }: ChatProps) {
       setNewMessage(content) // Restore on error
     }
     setSending(false)
+    // Keep keyboard open on mobile
+    requestAnimationFrame(() => inputRef.current?.focus())
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -253,6 +255,7 @@ export function Chat({ isOpen, onClose }: ChatProps) {
               className="flex-1 bg-surface2 border border-border rounded-full px-4 py-2.5 text-[0.85rem] text-white placeholder:text-white/25 outline-none focus:border-teal min-w-0"
             />
             <button
+              onMouseDown={(e) => e.preventDefault()}
               onClick={handleSend}
               disabled={!newMessage.trim() || sending}
               className="w-10 h-10 rounded-full bg-teal flex items-center justify-center flex-shrink-0 border-none cursor-pointer disabled:opacity-40 transition-opacity"
