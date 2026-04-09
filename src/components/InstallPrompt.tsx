@@ -96,16 +96,24 @@ export function InstallPrompt() {
         </div>
 
         {isIOS ? (
-          <div className="bg-surface2 rounded-xl p-3">
+          <div className="bg-surface2 rounded-xl p-3 space-y-1.5">
             <div className="flex items-center gap-2 text-[0.78rem]">
               <span className="text-muted">1.</span>
+              <span>Appuyez sur <strong>&#8942;</strong> (3 points)</span>
+            </div>
+            <div className="flex items-center gap-2 text-[0.78rem]">
+              <span className="text-muted">2.</span>
               <span>Appuyez sur</span>
               <Share size={14} className="text-teal" />
-              <span className="text-muted">(partager)</span>
+              <span><strong>Partager</strong></span>
             </div>
-            <div className="flex items-center gap-2 text-[0.78rem] mt-1.5">
-              <span className="text-muted">2.</span>
-              <span>Puis &laquo; Sur l&apos;\u00e9cran d&apos;accueil &raquo;</span>
+            <div className="flex items-center gap-2 text-[0.78rem]">
+              <span className="text-muted">3.</span>
+              <span>Appuyez sur <strong>Voir plus</strong></span>
+            </div>
+            <div className="flex items-center gap-2 text-[0.78rem]">
+              <span className="text-muted">4.</span>
+              <span><strong>Sur l&apos;&#233;cran d&apos;accueil</strong></span>
             </div>
           </div>
         ) : (
