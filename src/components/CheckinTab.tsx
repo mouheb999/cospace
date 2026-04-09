@@ -4,7 +4,7 @@ import { useRef, useState, useCallback, useEffect } from 'react'
 import Image from 'next/image'
 import { submitCheckin, type CheckinResult } from '@/app/actions/checkin'
 import { Button, Card, Badge, Avatar } from '@/components/ui'
-import { Camera, MapPin, Check, AlertTriangle, Loader2 } from 'lucide-react'
+import { Camera, MapPin, Check, AlertTriangle, Loader2, RefreshCw } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
 type Step = 'idle' | 'camera' | 'preview' | 'location' | 'review' | 'submitting' | 'success' | 'error'
@@ -28,6 +28,7 @@ export function CheckinTab() {
   const [errorMsg, setErrorMsg] = useState<string>('')
   const [streak, setStreak] = useState<number>(0)
   const [cameraError, setCameraError] = useState<string>('')
+  const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment')
 
   // Stop camera stream on unmount
   useEffect(() => {
@@ -37,12 +38,15 @@ export function CheckinTab() {
   }, [])
 
   // ── Start camera ──────────────────────────────────────────────────────────
-  const startCamera = useCallback(async () => {
+  const startCamera = useCallback(async (mode?: 'environment' | 'user') => {
+    const useMode = mode ?? facingMode
     setCameraError('')
     setStep('camera')
     try {
+      // Stop any existing stream before switching
+      streamRef.current?.getTracks().forEach(t => t.stop())
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } },
+        video: { facingMode: { ideal: useMode }, width: { ideal: 1280 } },
         audio: false,
       })
       streamRef.current = stream
@@ -59,7 +63,14 @@ export function CheckinTab() {
           : 'Caméra non disponible. Utilisez l\'option d\'upload de fichier ci-dessous.'
       )
     }
-  }, [])
+  }, [facingMode])
+
+  // ── Switch camera (front/back) ──────────────────────────────────────────
+  const switchCamera = useCallback(() => {
+    const newMode = facingMode === 'environment' ? 'user' : 'environment'
+    setFacingMode(newMode)
+    startCamera(newMode)
+  }, [facingMode, startCamera])
 
   // ── Capture photo from video ──────────────────────────────────────────────
   const capturePhoto = useCallback(() => {
@@ -171,7 +182,7 @@ export function CheckinTab() {
               Prenez une photo et confirmez votre présence à CoSpace.
             </p>
           </div>
-          <Button variant="teal" fullWidth onClick={startCamera}>
+          <Button variant="teal" fullWidth onClick={() => startCamera()}>
             <Camera size={18} />
             Commencer le Check-in
           </Button>
@@ -213,12 +224,22 @@ export function CheckinTab() {
                 />
                 <div className="absolute inset-0 border-4 border-teal/20 rounded-[18px] pointer-events-none" />
               </div>
-              <button
-                onClick={capturePhoto}
-                className="w-20 h-20 rounded-full border-4 border-teal bg-teal/20 flex items-center justify-center hover:bg-teal/30 transition-colors"
-              >
-                <div className="w-14 h-14 rounded-full bg-teal" />
-              </button>
+              <div className="flex items-center gap-6">
+                <button
+                  onClick={switchCamera}
+                  className="w-12 h-12 rounded-full bg-surface border border-border flex items-center justify-center hover:bg-surface2 transition-colors cursor-pointer"
+                  title="Changer de caméra"
+                >
+                  <RefreshCw size={20} className="text-white" />
+                </button>
+                <button
+                  onClick={capturePhoto}
+                  className="w-20 h-20 rounded-full border-4 border-teal bg-teal/20 flex items-center justify-center hover:bg-teal/30 transition-colors"
+                >
+                  <div className="w-14 h-14 rounded-full bg-teal" />
+                </button>
+                <div className="w-12" />
+              </div>
             </>
           )}
 

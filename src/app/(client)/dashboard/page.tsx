@@ -255,25 +255,35 @@ export default function ClientDashboard() {
     }
   }, [activeTab])
 
-  // Fetch responsable info for the assistance screen
+  // Fetch responsable info + recent messages for the assistance screen
   const [responsableInfo, setResponsableInfo] = useState<{ first_name: string; last_name: string; avatar_url: string | null; is_online: boolean; last_seen: string | null } | null>(null)
+  const [recentMessages, setRecentMessages] = useState<{ id: string; sender_id: string; content: string; created_at: string; is_read: boolean }[]>([])
   useEffect(() => {
+    if (!user) return
     const fetchResp = async () => {
       const { data } = await supabase
         .from('profiles')
-        .select('first_name, last_name, avatar_url, is_online, last_seen')
+        .select('id, first_name, last_name, avatar_url, is_online, last_seen')
         .eq('role', 'responsable')
         .limit(1)
       if (data && data.length > 0) {
         const r = data[0] as any
         const online = r.last_seen && (Date.now() - new Date(r.last_seen).getTime() < 2 * 60 * 1000)
         setResponsableInfo({ ...r, is_online: online })
+        // Fetch recent messages between this user and the responsable
+        const { data: msgs } = await supabase
+          .from('messages')
+          .select('id, sender_id, content, created_at, is_read')
+          .or(`and(sender_id.eq.${user.id},receiver_id.eq.${r.id}),and(sender_id.eq.${r.id},receiver_id.eq.${user.id})`)
+          .order('created_at', { ascending: false })
+          .limit(5)
+        setRecentMessages((msgs as any[] || []).reverse())
       }
     }
     fetchResp()
     const interval = setInterval(fetchResp, 30000)
     return () => clearInterval(interval)
-  }, [])
+  }, [user])
 
   // Track online status with heartbeat + visibility API
   useEffect(() => {
@@ -757,9 +767,9 @@ export default function ClientDashboard() {
         )}
 
         {/* Assistance / Chat Tab */}
-        {activeTab === 'chat' && !chatActive && (
+        {activeTab === 'chat' && !chatActive && recentMessages.length === 0 && (
           <div className="animate-fade-up">
-            {/* Hero Section */}
+            {/* Hero Section — first time, no messages yet */}
             <div className="text-center mb-6">
               <div className="w-16 h-16 rounded-2xl bg-teal/10 border border-teal/20 flex items-center justify-center mx-auto mb-4">
                 <MessageCircle size={28} className="text-teal" />
@@ -836,23 +846,82 @@ export default function ClientDashboard() {
                 </div>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Conversation preview — user has existing messages */}
+        {activeTab === 'chat' && !chatActive && recentMessages.length > 0 && (
+          <div className="animate-fade-up">
+            <h2 className="font-display text-[1.6rem] tracking-[0.05em] mb-1">Assistance</h2>
+            <p className="text-[0.72rem] text-muted mb-5">Votre conversation avec le responsable CoSpace</p>
+
+            {/* Responsable header */}
+            <div className="bg-surface border border-border rounded-[18px] p-4 mb-4">
+              <div className="flex items-center gap-3">
+                {responsableInfo ? (
+                  <>
+                    <div className="relative">
+                      <Avatar name={`${responsableInfo.first_name} ${responsableInfo.last_name}`} size="md" avatarUrl={responsableInfo.avatar_url || undefined} />
+                      <div className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-surface ${responsableInfo.is_online ? 'bg-success' : 'bg-muted/40'}`} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-bold text-[0.92rem]">{responsableInfo.first_name} {responsableInfo.last_name}</div>
+                      <div className="flex items-center gap-1.5">
+                        <div className={`w-1.5 h-1.5 rounded-full ${responsableInfo.is_online ? 'bg-success' : 'bg-muted/40'}`} />
+                        <span className={`text-[0.65rem] ${responsableInfo.is_online ? 'text-success' : 'text-muted'}`}>
+                          {responsableInfo.is_online ? 'En ligne' : 'Hors ligne'}
+                        </span>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-[0.85rem] text-muted">Chargement...</div>
+                )}
+              </div>
+            </div>
+
+            {/* Recent messages preview */}
+            <div className="bg-surface border border-border rounded-[18px] p-4 mb-4">
+              <div className="text-[0.62rem] font-bold tracking-[0.1em] uppercase text-muted mb-3">Derniers messages</div>
+              <div className="flex flex-col gap-2">
+                {recentMessages.map((msg) => {
+                  const isMine = msg.sender_id === user?.id
+                  return (
+                    <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
+                      <div className={`max-w-[85%] rounded-2xl px-3 py-2 ${
+                        isMine
+                          ? 'bg-teal/15 border border-teal/20 rounded-br-md'
+                          : 'bg-surface2 border border-border rounded-bl-md'
+                      }`}>
+                        <div className="text-[0.78rem] leading-relaxed">{msg.content.length > 100 ? msg.content.slice(0, 100) + '…' : msg.content}</div>
+                        <div className="text-[0.55rem] text-muted mt-0.5">
+                          {new Date(msg.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
 
             {/* Unread indicator */}
             {unreadMessages > 0 && (
-              <button
-                onClick={() => setChatActive(true)}
-                className="mt-4 w-full bg-danger/10 border border-danger/25 rounded-xl p-3.5 flex items-center gap-3 cursor-pointer text-left hover:border-danger/40 transition-colors"
-              >
-                <div className="w-8 h-8 rounded-full bg-danger flex items-center justify-center flex-shrink-0">
-                  <span className="text-white text-[0.7rem] font-bold">{unreadMessages}</span>
+              <div className="bg-danger/10 border border-danger/25 rounded-xl px-4 py-2.5 mb-3 flex items-center gap-2">
+                <div className="w-5 h-5 rounded-full bg-danger flex items-center justify-center flex-shrink-0">
+                  <span className="text-white text-[0.55rem] font-bold">{unreadMessages}</span>
                 </div>
-                <div className="flex-1">
-                  <div className="font-semibold text-[0.82rem]">Message{unreadMessages > 1 ? 's' : ''} non lu{unreadMessages > 1 ? 's' : ''}</div>
-                  <div className="text-[0.65rem] text-muted">Appuyez pour voir la conversation</div>
-                </div>
-                <ChevronRight size={16} className="text-muted" />
-              </button>
+                <span className="text-[0.75rem] font-medium">message{unreadMessages > 1 ? 's' : ''} non lu{unreadMessages > 1 ? 's' : ''}</span>
+              </div>
             )}
+
+            {/* Continue button */}
+            <button
+              onClick={() => setChatActive(true)}
+              className="w-full bg-teal text-black rounded-xl py-3.5 font-bold text-[0.88rem] border-none cursor-pointer hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
+            >
+              <MessageCircle size={16} />
+              Continuer la conversation
+            </button>
           </div>
         )}
 
