@@ -42,17 +42,27 @@ export function useStreak() {
 
       setStreakData(streak)
 
-      // If streak is lost, reset current_streak to 0 in profile
+      // If streak is lost and profile still shows a non-zero streak, reset it
       if (streak.status === 'lost') {
-        console.log('[Streak] Streak lost, resetting current_streak to 0')
-        const { error: updateError } = await supabase
+        console.log('[Streak] Streak lost — checking if profile needs reset')
+        const { data: currentProfile } = await supabase
           .from('profiles')
-          .update({
-            current_streak: 0,
-            updated_at: new Date().toISOString(),
-          } as never)
+          .select('current_streak')
           .eq('id', user.id)
-        if (updateError) console.error('[Streak] Error resetting streak:', JSON.stringify(updateError, null, 2))
+          .limit(1)
+
+        const profileStreak = (currentProfile as any)?.[0]?.current_streak ?? 0
+        if (profileStreak > 0) {
+          console.log('[Streak] Resetting profile current_streak from', profileStreak, 'to 0')
+          const { error: updateError } = await supabase
+            .from('profiles')
+            .update({
+              current_streak: 0,
+              updated_at: new Date().toISOString(),
+            } as never)
+            .eq('id', user.id)
+          if (updateError) console.error('[Streak] Error resetting streak:', JSON.stringify(updateError, null, 2))
+        }
       }
     } catch (err: any) {
       console.error('[Streak] CATCH error:', err?.message, err?.code, err?.details, err?.hint)

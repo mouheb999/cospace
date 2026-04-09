@@ -26,13 +26,15 @@ export async function POST(request: NextRequest) {
 
     // Check if user already checked in today
     const today = new Date().toISOString().split('T')[0];
-    const { data: existingCheckin } = await supabase
+    const { data: existingCheckins } = await supabase
       .from('checkins')
       .select('id')
       .eq('user_id', user.id)
-      .gte('created_at', `${today}T00:00:00`)
-      .lt('created_at', `${today}T23:59:59`)
-      .single();
+      .gte('checked_in_at', `${today}T00:00:00`)
+      .lt('checked_in_at', `${today}T23:59:59`)
+      .limit(1);
+
+    const existingCheckin = existingCheckins?.[0] ?? null;
 
     if (existingCheckin) {
       return NextResponse.json(

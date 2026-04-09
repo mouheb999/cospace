@@ -29,17 +29,17 @@ export default function LandingPage() {
         .lt('created_at', `${today}T23:59:59`)
       
       // Get highest streak record
-      const { data: topStreak } = await supabase
+      const { data: topStreakData } = await supabase
         .from('profiles')
         .select('longest_streak')
         .order('longest_streak', { ascending: false })
         .limit(1)
-        .single()
       
+      const topStreak = topStreakData?.[0] as { longest_streak: number } | undefined
       setStats({
         members: membersCount || 0,
         checkinsToday: checkinsCount || 0,
-        streakRecord: (topStreak as { longest_streak: number } | null)?.longest_streak || 0
+        streakRecord: topStreak?.longest_streak || 0
       })
     }
     

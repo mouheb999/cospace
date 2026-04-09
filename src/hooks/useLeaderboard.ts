@@ -32,11 +32,12 @@ export function useLeaderboard(limit: number = 10) {
       let profiles: any[] | null = null
       let fetchError: any = null
 
-      // Try with status_message first
+      // Fetch users who have checked in recently (within 26h window)
+      // Don't filter by current_streak > 0 since it may be temporarily 0 due to client-side reset
       const res1 = await supabase
         .from('profiles')
         .select('id, first_name, last_name, longest_streak, current_streak, last_checkin, status_message')
-        .gt('current_streak', 0)
+        .not('last_checkin', 'is', null)
         .gte('last_checkin', cutoff)
         .order('current_streak', { ascending: false })
         .order('longest_streak', { ascending: false })
@@ -46,11 +47,10 @@ export function useLeaderboard(limit: number = 10) {
 
       if (res1.error) {
         console.warn('[Leaderboard] Retrying without status_message column...')
-        // Fallback: query without status_message
         const res2 = await supabase
           .from('profiles')
           .select('id, first_name, last_name, longest_streak, current_streak, last_checkin')
-          .gt('current_streak', 0)
+          .not('last_checkin', 'is', null)
           .gte('last_checkin', cutoff)
           .order('current_streak', { ascending: false })
           .order('longest_streak', { ascending: false })

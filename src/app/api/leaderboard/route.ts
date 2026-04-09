@@ -21,16 +21,23 @@ export async function GET() {
       );
     }
 
-    // Get reward text
-    const { data: settings } = await supabase
-      .from('leaderboard_settings')
-      .select('reward_text')
-      .single();
+    // Get reward text (table may not exist)
+    let rewardText = '🎁 Le champion du mois gagne 1 semaine gratuite!';
+    try {
+      const { data: settings } = await supabase
+        .from('leaderboard_settings')
+        .select('reward_text')
+        .limit(1);
 
-    const settingsData = settings as { reward_text: string } | null;
+      const settingsData = (settings as { reward_text: string }[] | null)?.[0];
+      if (settingsData?.reward_text) rewardText = settingsData.reward_text;
+    } catch {
+      // leaderboard_settings table may not exist yet
+    }
+
     return NextResponse.json({
       leaderboard: leaderboard || [],
-      rewardText: settingsData?.reward_text || '🎁 Le champion du mois gagne 1 semaine gratuite!',
+      rewardText,
     });
   } catch (error) {
     console.error('Leaderboard API error:', error);
