@@ -7,7 +7,7 @@ import { LiveDot } from '@/components/decorations/Decorations'
 import { CheckinTab } from '@/components/CheckinTab'
 import { 
   Home, Camera, CreditCard, TrendingUp, User, 
-  ChevronRight, Copy, LogOut, Bell, Settings, Loader2, Check
+  ChevronRight, Copy, LogOut, Bell, Settings, Loader2, Check, Edit3, Calendar
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth/context'
 import { useProfile } from '@/hooks/useProfile'
@@ -57,6 +57,15 @@ export default function ClientDashboard() {
   const [onboardingAvatar, setOnboardingAvatar] = useState<File | null>(null)
   const [onboardingAvatarPreview, setOnboardingAvatarPreview] = useState<string | null>(null)
   const [onboardingSaving, setOnboardingSaving] = useState(false)
+  const [checkinDates, setCheckinDates] = useState<Set<string>>(new Set())
+  const [totalCheckins, setTotalCheckins] = useState(0)
+  const [showNotifSettings, setShowNotifSettings] = useState(false)
+  const [notifPrefs, setNotifPrefs] = useState({
+    streak_reminder: true,
+    checkin_confirmation: true,
+    leaderboard_updates: false,
+    announcements: true,
+  })
 
   const supabase = createClient()
 
@@ -115,6 +124,19 @@ export default function ClientDashboard() {
 
         if (checkinData && checkinData.length > 0) {
           setTodayCheckin(checkinData[0] as { image_url: string; checked_in_at: string })
+        }
+
+        // Fetch all checkin dates for history grid
+        const { data: allCheckins } = await supabase
+          .from('checkins')
+          .select('checked_in_at')
+          .eq('user_id', user.id)
+          .order('checked_in_at', { ascending: false })
+
+        if (allCheckins) {
+          setTotalCheckins(allCheckins.length)
+          const dates = new Set(allCheckins.map((c: any) => new Date(c.checked_in_at).toISOString().split('T')[0]))
+          setCheckinDates(dates)
         }
       } catch (err) {
         console.error('[Dashboard] CATCH error:', err)
@@ -698,13 +720,14 @@ export default function ClientDashboard() {
         {/* Profile Tab */}
         {activeTab === 'profile' && (
           <div className="animate-fade-up">
-            {/* Profile Header */}
-            <div className="bg-surface border border-border rounded-[20px] p-6 mb-5">
-              <div className="flex items-center gap-5 mb-4">
-                <div className="relative">
-                  <Avatar name={`${profile.first_name} ${profile.last_name}`} size="lg" avatarUrl={profile.avatar_url} />
-                  <label className="absolute bottom-0 right-0 w-8 h-8 bg-teal rounded-full flex items-center justify-center cursor-pointer hover:bg-teal/80 transition-colors">
-                    <Camera size={16} className="text-white" />
+            {/* Profile Header Card */}
+            <div className="bg-surface border border-border rounded-[20px] p-5 mb-4">
+              <div className="flex flex-col items-center text-center mb-4">
+                {/* Avatar */}
+                <div className="relative mb-3">
+                  <Avatar name={`${profile.first_name} ${profile.last_name}`} size="xl" avatarUrl={profile.avatar_url} />
+                  <label className="absolute bottom-0 right-0 w-8 h-8 bg-teal rounded-full flex items-center justify-center cursor-pointer hover:bg-teal/80 transition-colors shadow-lg">
+                    <Camera size={14} className="text-black" />
                     <input
                       type="file"
                       accept="image/*"
@@ -713,103 +736,168 @@ export default function ClientDashboard() {
                     />
                   </label>
                 </div>
-                <div className="flex-1">
-                  {editingProfile ? (
-                    <div className="flex gap-2 mb-2">
+
+                {/* Name */}
+                {editingProfile ? (
+                  <div className="w-full space-y-2">
+                    <div className="flex flex-col sm:flex-row gap-2">
                       <input
                         type="text"
                         value={editForm.first_name}
                         onChange={(e) => setEditForm(prev => ({ ...prev, first_name: e.target.value }))}
-                        className="bg-surface2 border border-border rounded-lg px-3 py-1 text-sm flex-1"
+                        className="bg-surface2 border border-border rounded-lg px-3 py-2.5 text-sm flex-1 text-white outline-none focus:border-teal"
                         placeholder="Prénom"
                       />
                       <input
                         type="text"
                         value={editForm.last_name}
                         onChange={(e) => setEditForm(prev => ({ ...prev, last_name: e.target.value }))}
-                        className="bg-surface2 border border-border rounded-lg px-3 py-1 text-sm flex-1"
+                        className="bg-surface2 border border-border rounded-lg px-3 py-2.5 text-sm flex-1 text-white outline-none focus:border-teal"
                         placeholder="Nom"
                       />
+                    </div>
+                    <div className="flex gap-2">
                       <button
                         onClick={handleSaveProfile}
-                        className="bg-teal text-black px-3 py-1 rounded-lg text-sm font-medium"
+                        className="bg-teal text-black px-4 py-2 rounded-lg text-sm font-bold flex-1 border-none cursor-pointer"
                       >
-                        Sauver
+                        Sauvegarder
                       </button>
                       <button
                         onClick={() => setEditingProfile(false)}
-                        className="bg-surface2 border border-border px-3 py-1 rounded-lg text-sm"
+                        className="bg-surface2 border border-border text-white px-4 py-2 rounded-lg text-sm cursor-pointer"
                       >
                         Annuler
                       </button>
                     </div>
-                  ) : (
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="font-display text-[1.4rem] tracking-[0.04em]">
-                          {profile.first_name} {profile.last_name}
-                        </div>
-                        <div className="text-[0.75rem] text-muted mt-0.5">{profile.email}</div>
-                      </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <h2 className="font-display text-[1.5rem] tracking-[0.04em]">
+                        {profile.first_name} {profile.last_name}
+                      </h2>
                       <button
                         onClick={handleEditProfile}
-                        className="text-teal hover:text-teal/80 transition-colors"
+                        className="text-muted hover:text-teal transition-colors bg-transparent border-none cursor-pointer p-1"
                       >
-                        <User size={18} />
+                        <Edit3 size={14} />
                       </button>
                     </div>
-                  )}
-                  <div className="flex gap-1.5 mt-2">
-                    <Badge variant="teal">{activeMembership?.plan_type || 'Free'}</Badge>
-                    <Badge variant="lime">Streak {streakData?.currentStreak || 0}🔥</Badge>
-                  </div>
+                    <div className="text-[0.75rem] text-muted">{profile.email}</div>
+                  </>
+                )}
+
+                <div className="flex gap-1.5 mt-3">
+                  <Badge variant="teal">{activeMembership?.plan_type || 'Free'}</Badge>
+                  <Badge variant="lime">Streak {streakData?.currentStreak || 0} 🔥</Badge>
                 </div>
               </div>
-            </div>
 
-            {/* Status Message */}
-            <div className="bg-surface border border-border rounded-[14px] p-4 mb-4">
-              <div className="text-[0.7rem] font-bold tracking-[0.1em] uppercase text-muted mb-2">Message de statut (classement)</div>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={statusMessage}
-                  onChange={(e) => setStatusMessage(e.target.value.slice(0, 120))}
-                  placeholder="Ex: En mode productivité maximale 💪"
-                  className="bg-surface2 border border-border rounded-lg px-3 py-2 text-sm flex-1 text-white placeholder:text-white/25 outline-none focus:border-teal"
-                  maxLength={120}
-                />
-                <button
-                  onClick={handleSaveStatusMessage}
-                  disabled={savingMessage}
-                  className="bg-teal text-black px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50 flex-shrink-0"
-                >
-                  {savingMessage ? '...' : 'Sauver'}
-                </button>
+              {/* Status Message */}
+              <div className="border-t border-border pt-3">
+                <div className="text-[0.65rem] text-muted uppercase tracking-[0.1em] mb-1.5">Message de statut</div>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={statusMessage}
+                    onChange={(e) => setStatusMessage(e.target.value.slice(0, 120))}
+                    placeholder="Ex: En mode productivité maximale"
+                    className="bg-surface2 border border-border rounded-lg px-3 py-2 text-[0.8rem] flex-1 text-white placeholder:text-white/25 outline-none focus:border-teal min-w-0"
+                    maxLength={120}
+                  />
+                  <button
+                    onClick={handleSaveStatusMessage}
+                    disabled={savingMessage}
+                    className="bg-teal text-black px-3 py-2 rounded-lg text-[0.75rem] font-bold disabled:opacity-50 flex-shrink-0 border-none cursor-pointer"
+                  >
+                    {savingMessage ? '...' : 'OK'}
+                  </button>
+                </div>
+                <div className="text-[0.58rem] text-muted mt-1">{statusMessage.length}/120</div>
               </div>
-              <div className="text-[0.6rem] text-muted mt-1.5">{statusMessage.length}/120 · Visible sur le classement</div>
             </div>
 
             {/* Stats Grid */}
-            <div className="grid grid-cols-2 gap-3 mb-4">
+            <div className="grid grid-cols-4 gap-2 mb-4">
               {[
-                { value: streakData?.currentStreak || 0, label: 'Streak actuel' },
-                { value: streakData?.bestStreak || 0, label: 'Meilleur streak' },
-                { value: 0, label: 'Check-ins total' },
-                { value: 0, label: 'Freeze tokens' },
+                { value: streakData?.currentStreak || 0, label: 'Streak', icon: '🔥' },
+                { value: streakData?.bestStreak || 0, label: 'Record', icon: '🏆' },
+                { value: totalCheckins, label: 'Check-ins', icon: '📸' },
+                { value: daysRemaining, label: 'Jours abo', icon: '📅' },
               ].map((stat, i) => (
-                <div key={i} className="bg-surface border border-border rounded-[14px] p-4 text-center">
-                  <div className="font-display text-[2rem] text-teal">{stat.value}</div>
-                  <div className="text-[0.65rem] text-muted uppercase tracking-[0.08em]">{stat.label}</div>
+                <div key={i} className="bg-surface border border-border rounded-[12px] p-3 text-center">
+                  <div className="text-[0.9rem] mb-0.5">{stat.icon}</div>
+                  <div className="font-display text-[1.4rem] text-teal leading-none">{stat.value}</div>
+                  <div className="text-[0.55rem] text-muted uppercase tracking-[0.06em] mt-1">{stat.label}</div>
                 </div>
               ))}
             </div>
 
+            {/* Check-in History Grid */}
+            <div className="bg-surface border border-border rounded-[14px] p-4 mb-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Calendar size={14} className="text-muted" />
+                <span className="text-[0.7rem] font-bold tracking-[0.1em] uppercase text-muted">
+                  Historique check-ins — {new Date().toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}
+                </span>
+              </div>
+              <div className="grid grid-cols-7 gap-[4px] mb-2">
+                {['L', 'M', 'M', 'J', 'V', 'S', 'D'].map((day, i) => (
+                  <div key={i} className="text-center text-[0.55rem] text-muted font-bold py-1">{day}</div>
+                ))}
+                {(() => {
+                  const now = new Date()
+                  const year = now.getFullYear()
+                  const month = now.getMonth()
+                  const firstDay = new Date(year, month, 1)
+                  const lastDay = new Date(year, month + 1, 0)
+                  const startOffset = (firstDay.getDay() + 6) % 7
+                  const todayStr = now.toISOString().split('T')[0]
+                  const cells = []
+
+                  for (let i = 0; i < startOffset; i++) {
+                    cells.push(<div key={`empty-${i}`} className="aspect-square" />)
+                  }
+
+                  for (let day = 1; day <= lastDay.getDate(); day++) {
+                    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+                    const isToday = dateStr === todayStr
+                    const hasCheckin = checkinDates.has(dateStr)
+                    const isFuture = new Date(dateStr) > now
+
+                    cells.push(
+                      <div
+                        key={dateStr}
+                        className={`aspect-square rounded-md flex items-center justify-center text-[0.55rem] font-medium ${
+                          isToday && hasCheckin ? 'bg-lime text-black' :
+                          isToday ? 'bg-lime/30 text-lime border border-lime/40' :
+                          hasCheckin ? 'bg-teal/80 text-black' :
+                          isFuture ? 'bg-surface2/50' :
+                          'bg-surface2'
+                        }`}
+                        title={hasCheckin ? `Check-in le ${dateStr}` : ''}
+                      >
+                        {day}
+                      </div>
+                    )
+                  }
+
+                  return cells
+                })()}
+              </div>
+              <div className="flex gap-3 text-[0.6rem] text-muted items-center">
+                <div className="flex items-center gap-1"><div className="w-2.5 h-2.5 rounded-sm bg-teal/80" />Présent</div>
+                <div className="flex items-center gap-1"><div className="w-2.5 h-2.5 rounded-sm bg-lime" />Aujourd&apos;hui</div>
+                <div className="flex items-center gap-1"><div className="w-2.5 h-2.5 rounded-sm bg-surface2 border border-border" />Absent</div>
+              </div>
+            </div>
+
             {/* Referral Card */}
             <div className="bg-surface border border-border rounded-[14px] p-4 mb-4">
-              <div className="text-[0.7rem] font-bold tracking-[0.1em] uppercase text-muted">Code de Parrainage</div>
-              <div className="flex items-center justify-between bg-surface2 rounded-[10px] px-4 py-3 mt-2.5">
-                <span className="font-display text-[1.3rem] tracking-[0.15em] text-teal">{profile.referral_code || 'N/A'}</span>
+              <div className="text-[0.7rem] font-bold tracking-[0.1em] uppercase text-muted mb-2">Code de Parrainage</div>
+              <div className="flex items-center justify-between bg-surface2 rounded-[10px] px-3 py-2.5">
+                <span className="font-display text-[1.1rem] tracking-[0.12em] text-teal">{profile.referral_code || 'N/A'}</span>
                 <button
                   onClick={copyReferralCode}
                   className="bg-teal/15 border border-teal/25 text-teal px-3 py-1.5 rounded-lg cursor-pointer text-[0.7rem] font-bold transition-all hover:bg-teal/25"
@@ -817,64 +905,60 @@ export default function ClientDashboard() {
                   {copied ? '✓ Copié' : 'Copier'}
                 </button>
               </div>
-              <div className="text-[0.72rem] text-muted mt-2.5">
-                Partagez votre code · 3 amis invités = 1 semaine offerte
+              <div className="text-[0.7rem] text-muted mt-2">
+                5 amis invités = 1 semaine offerte
               </div>
             </div>
 
-            {/* Check-in History Grid */}
-            <div className="mb-4">
-              <div className="text-[0.7rem] font-bold tracking-[0.1em] uppercase text-muted mb-2.5">
-                Historique check-ins (mars)
-              </div>
-              <div className="grid grid-cols-7 gap-[5px]">
-                {Array.from({ length: 21 }, (_, i) => {
-                  const done = i >= 2 && i <= 14
-                  const today = i === 15
-                  return (
-                    <div
-                      key={i}
-                      className={`aspect-square rounded-md ${
-                        today ? 'bg-lime' : done ? 'bg-teal opacity-80' : 'bg-surface2'
-                      }`}
-                    />
-                  )
-                })}
-              </div>
-              <div className="flex gap-2.5 mt-2.5 text-[0.65rem] text-muted items-center">
-                <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-sm bg-teal" />Présent</div>
-                <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-sm bg-lime" />Aujourd&apos;hui</div>
-                <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-sm bg-surface2 border border-border" />Absent</div>
-              </div>
-            </div>
-
-            {/* Menu */}
-            <div className="flex flex-col gap-1">
-              {[
-                { icon: User, label: 'Modifier mon profil' },
-                { icon: Bell, label: 'Notifications' },
-              ].map((item, i) => (
-                <button
-                  key={i}
-                  className="flex items-center justify-between p-3.5 bg-surface rounded-xl cursor-pointer transition-colors hover:bg-surface2 border-none w-full text-left"
-                >
-                  <div className="flex items-center gap-3 text-[0.85rem] font-medium">
-                    <item.icon size={18} />
-                    {item.label}
-                  </div>
-                  <ChevronRight size={16} />
-                </button>
-              ))}
+            {/* Notification Settings */}
+            <div className="bg-surface border border-border rounded-[14px] mb-4 overflow-hidden">
               <button
-                onClick={handleSignOut}
-                className="flex items-center justify-between p-3.5 bg-surface rounded-xl cursor-pointer transition-colors hover:bg-surface2 border-none w-full text-left"
+                onClick={() => setShowNotifSettings(!showNotifSettings)}
+                className="flex items-center justify-between p-4 w-full text-left bg-transparent border-none cursor-pointer"
               >
-                <div className="flex items-center gap-3 text-[0.85rem] font-medium text-danger">
-                  <LogOut size={18} />
-                  Se déconnecter
+                <div className="flex items-center gap-3">
+                  <Bell size={18} className="text-muted" />
+                  <span className="text-[0.85rem] font-medium text-white">Notifications</span>
                 </div>
+                <ChevronRight size={16} className={`text-muted transition-transform ${showNotifSettings ? 'rotate-90' : ''}`} />
               </button>
+              {showNotifSettings && (
+                <div className="border-t border-border px-4 pb-4">
+                  {[
+                    { key: 'streak_reminder', label: 'Rappel de streak', desc: 'Avant que votre streak expire' },
+                    { key: 'checkin_confirmation', label: 'Confirmation check-in', desc: 'Quand votre check-in est valid\u00e9' },
+                    { key: 'leaderboard_updates', label: 'Classement', desc: 'Changements dans le top 3' },
+                    { key: 'announcements', label: 'Annonces', desc: 'Nouvelles annonces de CoSpace' },
+                  ].map((pref) => (
+                    <div key={pref.key} className="flex items-center justify-between py-3 border-b border-border last:border-none">
+                      <div>
+                        <div className="text-[0.82rem] font-medium">{pref.label}</div>
+                        <div className="text-[0.65rem] text-muted">{pref.desc}</div>
+                      </div>
+                      <button
+                        onClick={() => setNotifPrefs(prev => ({ ...prev, [pref.key]: !prev[pref.key as keyof typeof prev] }))}
+                        className={`w-11 h-6 rounded-full transition-colors relative border-none cursor-pointer ${
+                          notifPrefs[pref.key as keyof typeof notifPrefs] ? 'bg-teal' : 'bg-surface2'
+                        }`}
+                      >
+                        <div className={`w-4.5 h-4.5 absolute top-[3px] rounded-full bg-white shadow transition-transform ${
+                          notifPrefs[pref.key as keyof typeof notifPrefs] ? 'translate-x-[22px]' : 'translate-x-[3px]'
+                        }`} style={{ width: '18px', height: '18px' }} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
+
+            {/* Sign Out */}
+            <button
+              onClick={handleSignOut}
+              className="flex items-center justify-center gap-2 p-3.5 bg-surface border border-border rounded-xl cursor-pointer transition-colors hover:bg-danger/10 hover:border-danger/30 w-full text-left"
+            >
+              <LogOut size={16} className="text-danger" />
+              <span className="text-[0.85rem] font-medium text-danger">Se déconnecter</span>
+            </button>
           </div>
         )}
       </main>
