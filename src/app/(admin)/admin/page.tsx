@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Button, Input, Badge, Avatar } from '@/components/ui'
 import {
   LayoutGrid, Users, DollarSign, TrendingUp, Tag, Bell, Settings,
-  AlertTriangle, ChevronRight, Download, Plus, Search, LogOut, X, Loader2
+  AlertTriangle, ChevronRight, Download, Plus, Search, LogOut, X, Loader2, Menu
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth/context'
 import { createClient } from '@/lib/supabase/client'
@@ -30,6 +30,7 @@ export default function AdminDashboard() {
 
   const [activePage, setActivePage] = useState<AdminPage>('overview')
   const [loading, setLoading] = useState(true)
+  const [mobileNav, setMobileNav] = useState(false)
 
   // Data states
   const [members, setMembers] = useState<Member[]>([])
@@ -224,91 +225,75 @@ export default function AdminDashboard() {
     )
   }
 
-  return (
-    <div className="min-h-screen flex bg-bg overflow-hidden">
-      {/* Sidebar */}
-      <aside className="w-60 flex-shrink-0 bg-surface border-r border-border flex flex-col">
-        <div className="p-5 border-b border-border">
+  const navButton = (item: typeof navItems[0]) => (
+    <button
+      key={item.id}
+      onClick={() => { setActivePage(item.id); setMobileNav(false) }}
+      className={`w-full flex items-center gap-2.5 px-5 py-2.5 text-[0.82rem] font-medium transition-all border-none bg-transparent cursor-pointer text-left font-sans ${
+        activePage === item.id ? 'text-teal bg-teal/[0.08]' : 'text-muted hover:text-white hover:bg-white/[0.04]'
+      }`}
+    >
+      <item.icon size={16} />
+      {item.label}
+      {item.badge && <span className="ml-auto bg-teal text-black text-[0.55rem] font-extrabold px-1.5 py-0.5 rounded-full">{item.badge}</span>}
+      {item.badgeDanger && <span className="ml-auto bg-danger text-white text-[0.55rem] font-extrabold px-1.5 py-0.5 rounded-full">{item.badgeDanger}</span>}
+    </button>
+  )
+
+  const sidebarContent = (
+    <>
+      <div className="p-5 border-b border-border flex items-center justify-between">
+        <div>
           <div className="font-handwriting text-[1.4rem] font-bold text-teal">CoSpace</div>
           <div className="text-[0.65rem] text-muted mt-1">Admin Panel</div>
         </div>
-        
-        <nav className="flex-1 py-3 overflow-y-auto">
-          <div className="px-5 py-3.5 text-[0.58rem] font-bold tracking-[0.18em] uppercase text-white/20">
-            Dashboard
-          </div>
-          {navItems.slice(0, 3).map((item) => (
-            <button
-              key={item.id}
-              onClick={() => setActivePage(item.id)}
-              className={`w-full flex items-center gap-2.5 px-5 py-2.5 text-[0.82rem] font-medium transition-all border-none bg-transparent cursor-pointer text-left font-sans ${
-                activePage === item.id ? 'text-teal bg-teal/[0.08]' : 'text-muted hover:text-white hover:bg-white/[0.04]'
-              }`}
-            >
-              <item.icon size={16} />
-              {item.label}
-              {item.badge && (
-                <span className="ml-auto bg-teal text-black text-[0.55rem] font-extrabold px-1.5 py-0.5 rounded-full">
-                  {item.badge}
-                </span>
-              )}
-            </button>
-          ))}
-          
-          <div className="px-5 py-3.5 text-[0.58rem] font-bold tracking-[0.18em] uppercase text-white/20 mt-2">
-            Contenu
-          </div>
-          {navItems.slice(3, 6).map((item) => (
-            <button
-              key={item.id}
-              onClick={() => setActivePage(item.id)}
-              className={`w-full flex items-center gap-2.5 px-5 py-2.5 text-[0.82rem] font-medium transition-all border-none bg-transparent cursor-pointer text-left font-sans ${
-                activePage === item.id ? 'text-teal bg-teal/[0.08]' : 'text-muted hover:text-white hover:bg-white/[0.04]'
-              }`}
-            >
-              <item.icon size={16} />
-              {item.label}
-              {item.badgeDanger && (
-                <span className="ml-auto bg-danger text-white text-[0.55rem] font-extrabold px-1.5 py-0.5 rounded-full">
-                  {item.badgeDanger}
-                </span>
-              )}
-            </button>
-          ))}
-          
-          <div className="px-5 py-3.5 text-[0.58rem] font-bold tracking-[0.18em] uppercase text-white/20 mt-2">
-            Système
-          </div>
-          {navItems.slice(6).map((item) => (
-            <button
-              key={item.id}
-              onClick={() => setActivePage(item.id)}
-              className={`w-full flex items-center gap-2.5 px-5 py-2.5 text-[0.82rem] font-medium transition-all border-none bg-transparent cursor-pointer text-left font-sans ${
-                activePage === item.id ? 'text-teal bg-teal/[0.08]' : 'text-muted hover:text-white hover:bg-white/[0.04]'
-              }`}
-            >
-              <item.icon size={16} />
-              {item.label}
-            </button>
-          ))}
-        </nav>
+        <button onClick={() => setMobileNav(false)} className="md:hidden text-muted hover:text-white bg-transparent border-none cursor-pointer"><X size={20} /></button>
+      </div>
+      <nav className="flex-1 py-3 overflow-y-auto">
+        <div className="px-5 py-3.5 text-[0.58rem] font-bold tracking-[0.18em] uppercase text-white/20">Dashboard</div>
+        {navItems.slice(0, 3).map(navButton)}
+        <div className="px-5 py-3.5 text-[0.58rem] font-bold tracking-[0.18em] uppercase text-white/20 mt-2">Contenu</div>
+        {navItems.slice(3, 6).map(navButton)}
+        <div className="px-5 py-3.5 text-[0.58rem] font-bold tracking-[0.18em] uppercase text-white/20 mt-2">Système</div>
+        {navItems.slice(6).map(navButton)}
+      </nav>
+      <div className="p-5 border-t border-border">
+        <Button variant="danger" fullWidth size="sm" onClick={signOut}><LogOut size={14} /> Déconnexion</Button>
+      </div>
+    </>
+  )
 
-        <div className="p-5 border-t border-border">
-          <Button variant="danger" fullWidth size="sm" onClick={signOut}>
-            <LogOut size={14} />
-            Déconnexion
-          </Button>
-        </div>
+  return (
+    <div className="min-h-screen flex bg-bg overflow-hidden">
+      {/* Desktop Sidebar */}
+      <aside className="hidden md:flex w-60 flex-shrink-0 bg-surface border-r border-border flex-col">
+        {sidebarContent}
       </aside>
+
+      {/* Mobile Nav Overlay */}
+      {mobileNav && (
+        <div className="fixed inset-0 z-50 md:hidden">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setMobileNav(false)} />
+          <aside className="absolute left-0 top-0 bottom-0 w-64 bg-surface border-r border-border flex flex-col z-10 animate-fade-up">
+            {sidebarContent}
+          </aside>
+        </div>
+      )}
 
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto">
+        {/* Mobile Header */}
+        <div className="md:hidden sticky top-0 z-40 flex items-center justify-between px-4 py-3 bg-surface border-b border-border">
+          <button onClick={() => setMobileNav(true)} className="text-muted hover:text-white bg-transparent border-none cursor-pointer"><Menu size={22} /></button>
+          <div className="font-handwriting text-[1.2rem] font-bold text-teal">CoSpace</div>
+          <div className="w-6" />
+        </div>
         {/* Overview Page */}
         {activePage === 'overview' && (
-          <div className="p-9 animate-fade-up">
-            <div className="flex items-center justify-between mb-7">
+          <div className="p-4 md:p-9 animate-fade-up">
+            <div className="flex flex-col md:flex-row md:items-center justify-between mb-5 md:mb-7 gap-3">
               <div>
-                <h1 className="font-display text-[2.4rem] tracking-[0.06em]">Vue Globale</h1>
+                <h1 className="font-display text-[1.6rem] md:text-[2.4rem] tracking-[0.06em]">Vue Globale</h1>
                 <p className="text-[0.75rem] text-muted mt-0.5">{new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} · Temps réel</p>
               </div>
               <div className="flex gap-2">
@@ -328,7 +313,7 @@ export default function AdminDashboard() {
             ) : null })()}
 
             {/* KPI Grid */}
-            <div className="grid grid-cols-4 gap-4 mb-6">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6">
               {[
                 { icon: '💰', label: 'Revenus ce mois', value: `${thisMonthRevenue.toLocaleString('fr-FR')} TND`, delta: revenueDelta !== 0 ? `${revenueDelta > 0 ? '↑' : '↓'} ${revenueDelta}%` : '—', color: 'teal' },
                 { icon: '👥', label: 'Membres actifs', value: String(activeMembers), delta: `${members.length} inscrits`, color: 'lime' },
@@ -339,14 +324,14 @@ export default function AdminDashboard() {
                   <div className={`absolute top-0 left-0 right-0 h-0.5 bg-${kpi.color}`} />
                   <div className="text-[1.4rem] mb-2.5">{kpi.icon}</div>
                   <div className="text-[0.62rem] tracking-[0.12em] uppercase text-muted mb-1.5">{kpi.label}</div>
-                  <div className={`font-display text-[2.2rem] leading-none tracking-[0.03em] text-${kpi.color}`}>{kpi.value}</div>
+                  <div className={`font-display text-[1.6rem] md:text-[2.2rem] leading-none tracking-[0.03em] text-${kpi.color}`}>{kpi.value}</div>
                   {kpi.delta && <div className="text-[0.65rem] text-muted mt-1.5"><span className="text-success">{kpi.delta}</span></div>}
                 </div>
               ))}
             </div>
 
             {/* Revenue Chart */}
-            <div className="bg-surface border border-border rounded-2xl p-6 mb-5">
+            <div className="bg-surface border border-border rounded-2xl p-4 md:p-6 mb-5">
               <h3 className="font-display text-[1.2rem] tracking-[0.06em] mb-5">Revenus — 7 Derniers Jours</h3>
               <ResponsiveContainer width="100%" height={160}>
                 <AreaChart data={revenueChartData}>
@@ -364,10 +349,10 @@ export default function AdminDashboard() {
             </div>
 
             {/* Two Column Layout */}
-            <div className="grid grid-cols-2 gap-5">
-              <div className="bg-surface border border-border rounded-2xl p-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">
+              <div className="bg-surface border border-border rounded-2xl p-4 md:p-6">
                 <div className="flex items-center justify-between mb-5">
-                  <h3 className="font-display text-[1.2rem] tracking-[0.06em]">Membres Récents</h3>
+                  <h3 className="font-display text-[1rem] md:text-[1.2rem] tracking-[0.06em]">Membres Récents</h3>
                   <Badge variant="teal">{members.length} inscrits</Badge>
                 </div>
                 <table className="w-full">
@@ -398,8 +383,8 @@ export default function AdminDashboard() {
                 </table>
               </div>
 
-              <div className="bg-surface border border-border rounded-2xl p-6">
-                <h3 className="font-display text-[1.2rem] tracking-[0.06em] mb-5">Actions Rapides</h3>
+              <div className="bg-surface border border-border rounded-2xl p-4 md:p-6">
+                <h3 className="font-display text-[1rem] md:text-[1.2rem] tracking-[0.06em] mb-5">Actions Rapides</h3>
                 <div className="flex flex-col gap-2.5">
                   <Button variant="teal" fullWidth onClick={() => setActivePage('announce')}>📢 Créer une annonce</Button>
                   <Button variant="outline" fullWidth onClick={() => setActivePage('members')}>👥 Gérer les membres</Button>
@@ -414,16 +399,16 @@ export default function AdminDashboard() {
 
         {/* Members Page */}
         {activePage === 'members' && (
-          <div className="p-9 animate-fade-up">
-            <div className="flex items-center justify-between mb-7">
+          <div className="p-4 md:p-9 animate-fade-up">
+            <div className="flex items-center justify-between mb-5 md:mb-7">
               <div>
-                <h1 className="font-display text-[2.4rem] tracking-[0.06em]">Membres</h1>
+                <h1 className="font-display text-[1.6rem] md:text-[2.4rem] tracking-[0.06em]">Membres</h1>
                 <p className="text-[0.75rem] text-muted mt-0.5">{members.length} membres enregistrés</p>
               </div>
             </div>
 
             {/* Filters */}
-            <div className="flex gap-3 mb-5">
+            <div className="flex flex-col md:flex-row gap-3 mb-5">
               <div className="flex-1 relative">
                 <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
                 <input
@@ -433,27 +418,29 @@ export default function AdminDashboard() {
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
               </div>
-              <select className="bg-surface2 border border-border text-white py-3 px-4 rounded-[10px] text-[0.9rem] outline-none w-40" value={filterPlan} onChange={(e) => setFilterPlan(e.target.value)}>
-                <option value="all">Tous les plans</option>
-                {pricing.map(p => <option key={p.plan_type} value={p.plan_type}>{p.name}</option>)}
-              </select>
-              <select className="bg-surface2 border border-border text-white py-3 px-4 rounded-[10px] text-[0.9rem] outline-none w-36" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
-                <option value="all">Tous statuts</option>
-                <option value="active">Actif</option>
-                <option value="expiring">Expire bientôt</option>
-                <option value="inactive">Sans abonnement</option>
-              </select>
+              <div className="flex gap-3">
+                <select className="bg-surface2 border border-border text-white py-3 px-4 rounded-[10px] text-[0.85rem] md:text-[0.9rem] outline-none flex-1 md:w-40" value={filterPlan} onChange={(e) => setFilterPlan(e.target.value)}>
+                  <option value="all">Tous les plans</option>
+                  {pricing.map(p => <option key={p.plan_type} value={p.plan_type}>{p.name}</option>)}
+                </select>
+                <select className="bg-surface2 border border-border text-white py-3 px-4 rounded-[10px] text-[0.85rem] md:text-[0.9rem] outline-none flex-1 md:w-36" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+                  <option value="all">Tous statuts</option>
+                  <option value="active">Actif</option>
+                  <option value="expiring">Expire bientôt</option>
+                  <option value="inactive">Sans abonnement</option>
+                </select>
+              </div>
             </div>
 
             {/* Table */}
-            <div className="bg-surface border border-border rounded-2xl overflow-hidden">
-              <table className="w-full">
+            <div className="bg-surface border border-border rounded-2xl overflow-x-auto">
+              <table className="w-full min-w-[600px]">
                 <thead>
                   <tr className="text-left text-[0.62rem] font-bold tracking-[0.12em] uppercase text-muted border-b border-border">
                     <th className="p-3.5">Membre</th>
                     <th className="p-3.5">Plan</th>
-                    <th className="p-3.5">Expiration</th>
-                    <th className="p-3.5">Streak</th>
+                    <th className="p-3.5 hidden md:table-cell">Expiration</th>
+                    <th className="p-3.5 hidden md:table-cell">Streak</th>
                     <th className="p-3.5">Statut</th>
                     <th className="p-3.5">Actions</th>
                   </tr>
@@ -474,8 +461,8 @@ export default function AdminDashboard() {
                           </div>
                         </td>
                         <td className="p-3.5 text-[0.82rem]">{ms ? planLabel(ms.plan_type) : '—'}</td>
-                        <td className="p-3.5 text-[0.82rem]">{ms ? formatDate(ms.end_date) : '—'}</td>
-                        <td className="p-3.5 text-[0.82rem]">{m.current_streak > 0 ? `🔥 ${m.current_streak}` : '0'}</td>
+                        <td className="p-3.5 text-[0.82rem] hidden md:table-cell">{ms ? formatDate(ms.end_date) : '—'}</td>
+                        <td className="p-3.5 text-[0.82rem] hidden md:table-cell">{m.current_streak > 0 ? `🔥 ${m.current_streak}` : '0'}</td>
                         <td className="p-3.5">
                           <Badge variant={status === 'active' ? 'teal' : status === 'expiring' ? 'warn' : 'danger'}>
                             {status === 'active' ? 'Actif' : status === 'expiring' ? 'Expire bientôt' : 'Inactif'}
@@ -536,16 +523,16 @@ export default function AdminDashboard() {
 
         {/* Revenue Page */}
         {activePage === 'revenue' && (
-          <div className="p-9 animate-fade-up">
-            <div className="flex items-center justify-between mb-7">
+          <div className="p-4 md:p-9 animate-fade-up">
+            <div className="flex items-center justify-between mb-5 md:mb-7">
               <div>
-                <h1 className="font-display text-[2.4rem] tracking-[0.06em]">Revenus</h1>
+                <h1 className="font-display text-[1.6rem] md:text-[2.4rem] tracking-[0.06em]">Revenus</h1>
                 <p className="text-[0.75rem] text-muted mt-0.5">{now.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}</p>
               </div>
             </div>
 
             {/* KPIs */}
-            <div className="grid grid-cols-3 gap-4 mb-6">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4 mb-6">
               {[
                 { label: 'Ce mois', value: `${thisMonthRevenue.toLocaleString('fr-FR')} TND`, delta: revenueDelta !== 0 ? `${revenueDelta > 0 ? '↑' : '↓'} ${revenueDelta}%` : '—', color: 'teal' },
                 { label: 'Mois précédent', value: `${lastMonthRevenue.toLocaleString('fr-FR')} TND`, delta: '', color: 'lime' },
@@ -553,16 +540,16 @@ export default function AdminDashboard() {
               ].map((kpi, i) => (
                 <div key={i} className="bg-surface border border-border rounded-2xl p-5">
                   <div className="text-[0.62rem] tracking-[0.12em] uppercase text-muted mb-1.5">{kpi.label}</div>
-                  <div className={`font-display text-[2.2rem] leading-none text-${kpi.color}`}>{kpi.value}</div>
+                  <div className={`font-display text-[1.6rem] md:text-[2.2rem] leading-none text-${kpi.color}`}>{kpi.value}</div>
                   {kpi.delta && <div className="text-[0.65rem] text-muted mt-1.5"><span className="text-success">{kpi.delta}</span></div>}
                 </div>
               ))}
             </div>
 
             {/* Log Revenue Form */}
-            <div className="bg-surface border border-border rounded-2xl p-6 mb-5">
-              <h3 className="font-display text-[1.2rem] tracking-[0.06em] mb-4">Enregistrer un revenu</h3>
-              <div className="grid grid-cols-4 gap-3 items-end">
+            <div className="bg-surface border border-border rounded-2xl p-4 md:p-6 mb-5">
+              <h3 className="font-display text-[1rem] md:text-[1.2rem] tracking-[0.06em] mb-4">Enregistrer un revenu</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 items-end">
                 <div>
                   <label className="text-[0.72rem] font-semibold tracking-[0.08em] uppercase text-muted mb-1.5 block">Date</label>
                   <input type="date" value={revDate} onChange={(e) => setRevDate(e.target.value)} className="w-full bg-surface2 border border-border text-white py-2.5 px-3 rounded-lg text-[0.85rem] outline-none focus:border-teal" />
@@ -580,8 +567,8 @@ export default function AdminDashboard() {
             </div>
 
             {/* Bar Chart */}
-            <div className="bg-surface border border-border rounded-2xl p-6 mb-5">
-              <h3 className="font-display text-[1.2rem] tracking-[0.06em] mb-5">Revenus — 7 Derniers Jours</h3>
+            <div className="bg-surface border border-border rounded-2xl p-4 md:p-6 mb-5">
+              <h3 className="font-display text-[1rem] md:text-[1.2rem] tracking-[0.06em] mb-5">Revenus — 7 Derniers Jours</h3>
               <ResponsiveContainer width="100%" height={140}>
                 <BarChart data={revenueChartData}>
                   <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: 'rgba(255,255,255,0.3)', fontSize: 10 }} />
@@ -621,26 +608,26 @@ export default function AdminDashboard() {
 
         {/* Leaderboard Page */}
         {activePage === 'leaderboard' && (
-          <div className="p-9 animate-fade-up">
-            <div className="flex items-center justify-between mb-7">
+          <div className="p-4 md:p-9 animate-fade-up">
+            <div className="flex items-center justify-between mb-5 md:mb-7">
               <div>
-                <h1 className="font-display text-[2.4rem] tracking-[0.06em]">Classement</h1>
+                <h1 className="font-display text-[1.6rem] md:text-[2.4rem] tracking-[0.06em]">Classement</h1>
                 <p className="text-[0.75rem] text-muted mt-0.5">Configuration du champion</p>
               </div>
             </div>
 
             {/* Reward Config */}
-            <div className="bg-surface border border-border rounded-2xl p-6 mb-5">
-              <h3 className="font-display text-[1.2rem] tracking-[0.06em] mb-4">Texte de Récompense Champion</h3>
+            <div className="bg-surface border border-border rounded-2xl p-4 md:p-6 mb-5">
+              <h3 className="font-display text-[1rem] md:text-[1.2rem] tracking-[0.06em] mb-4">Texte de Récompense Champion</h3>
               <p className="text-[0.78rem] text-muted mb-3">Ce texte s&apos;affiche instantanément sur la carte Champion de tous les clients.</p>
               <Input label="Message" value={rewardText} onChange={(e) => setRewardText(e.target.value)} />
               <Button variant="teal" className="mt-4" onClick={saveRewardText}>Sauvegarder</Button>
             </div>
 
             {/* Top 10 Table */}
-            <div className="bg-surface border border-border rounded-2xl overflow-hidden">
-              <div className="p-4 border-b border-border font-display text-[1.1rem] tracking-[0.06em]">Top 10 Streaks</div>
-              <table className="w-full">
+            <div className="bg-surface border border-border rounded-2xl overflow-x-auto">
+              <div className="p-4 border-b border-border font-display text-[1rem] md:text-[1.1rem] tracking-[0.06em]">Top 10 Streaks</div>
+              <table className="w-full min-w-[400px]">
                 <thead>
                   <tr className="text-left text-[0.62rem] font-bold tracking-[0.12em] uppercase text-muted border-b border-border">
                     <th className="p-3.5">#</th>
@@ -679,10 +666,10 @@ export default function AdminDashboard() {
 
         {/* Pricing Page */}
         {activePage === 'pricing' && (
-          <div className="p-9 animate-fade-up">
-            <div className="flex items-center justify-between mb-7">
+          <div className="p-4 md:p-9 animate-fade-up">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-5 md:mb-7 gap-3">
               <div>
-                <h1 className="font-display text-[2.4rem] tracking-[0.06em]">Tarifs</h1>
+                <h1 className="font-display text-[1.6rem] md:text-[2.4rem] tracking-[0.06em]">Tarifs</h1>
                 <p className="text-[0.75rem] text-muted mt-0.5">Modification en temps réel · Supabase sync</p>
               </div>
               <Button variant="teal" onClick={savePrices} disabled={changedPrices.size === 0}>💾 Sauvegarder tout</Button>
@@ -715,8 +702,8 @@ export default function AdminDashboard() {
             </div>
 
             {/* Audit Log */}
-            <div className="bg-surface border border-border rounded-2xl p-6">
-              <h3 className="font-display text-[1.2rem] tracking-[0.06em] mb-4">Historique des changements</h3>
+            <div className="bg-surface border border-border rounded-2xl p-4 md:p-6 overflow-x-auto">
+              <h3 className="font-display text-[1rem] md:text-[1.2rem] tracking-[0.06em] mb-4">Historique des changements</h3>
               <table className="w-full">
                 <thead>
                   <tr className="text-left text-[0.62rem] font-bold tracking-[0.12em] uppercase text-muted border-b border-border">
@@ -746,17 +733,17 @@ export default function AdminDashboard() {
 
         {/* Announcements Page */}
         {activePage === 'announce' && (
-          <div className="p-9 animate-fade-up">
-            <div className="flex items-center justify-between mb-7">
+          <div className="p-4 md:p-9 animate-fade-up">
+            <div className="flex items-center justify-between mb-5 md:mb-7">
               <div>
-                <h1 className="font-display text-[2.4rem] tracking-[0.06em]">Annonces</h1>
+                <h1 className="font-display text-[1.6rem] md:text-[2.4rem] tracking-[0.06em]">Annonces</h1>
                 <p className="text-[0.75rem] text-muted mt-0.5">Visible sur l&apos;accueil client</p>
               </div>
             </div>
 
             {/* Create Form */}
-            <div className="bg-surface border border-border rounded-2xl p-6 mb-5">
-              <h3 className="font-display text-[1.2rem] tracking-[0.06em] mb-4">Nouvelle Annonce</h3>
+            <div className="bg-surface border border-border rounded-2xl p-4 md:p-6 mb-5">
+              <h3 className="font-display text-[1rem] md:text-[1.2rem] tracking-[0.06em] mb-4">Nouvelle Annonce</h3>
               <div className="flex flex-col gap-3">
                 <Input
                   label="Titre"
@@ -809,15 +796,15 @@ export default function AdminDashboard() {
 
         {/* Settings Page */}
         {activePage === 'settings' && (
-          <div className="p-9 animate-fade-up">
-            <div className="flex items-center justify-between mb-7">
+          <div className="p-4 md:p-9 animate-fade-up">
+            <div className="flex items-center justify-between mb-5 md:mb-7">
               <div>
-                <h1 className="font-display text-[2.4rem] tracking-[0.06em]">Paramètres</h1>
+                <h1 className="font-display text-[1.6rem] md:text-[2.4rem] tracking-[0.06em]">Paramètres</h1>
                 <p className="text-[0.75rem] text-muted mt-0.5">Configuration globale CoSpace</p>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               {/* Security */}
               <div>
                 <div className="mb-7">
