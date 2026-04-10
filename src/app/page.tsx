@@ -9,6 +9,7 @@ import { createClient } from '@/lib/supabase/client'
 
 export default function LandingPage() {
   const [stats, setStats] = useState({ members: 0, checkinsToday: 0, streakRecord: 0 })
+  const [plans, setPlans] = useState<{ name: string; price: string; period: string; features: string[]; featured: boolean }[]>([])
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -41,6 +42,19 @@ export default function LandingPage() {
         checkinsToday: checkinsCount || 0,
         streakRecord: topStreak?.longest_streak || 0
       })
+
+      // Fetch pricing
+      const { data: pricingData } = await supabase.from('pricing').select('*').order('price', { ascending: true })
+      if (pricingData && pricingData.length > 0) {
+        const periodMap: Record<string, string> = { daily: '/jour', weekly: '/semaine', biweekly: '/2 semaines', monthly: '/mois', quarterly: '/trimestre' }
+        setPlans(pricingData.map((p: any) => ({
+          name: p.name,
+          price: String(Math.round(p.price)),
+          period: periodMap[p.plan_type] || '',
+          features: p.features || [],
+          featured: p.is_featured || false,
+        })))
+      }
     }
     
     fetchStats()
@@ -172,12 +186,12 @@ export default function LandingPage() {
         <div className="text-[0.7rem] font-bold tracking-[0.2em] uppercase text-teal mb-3">Tarifs</div>
         <h2 className="font-display text-[1.6rem] tracking-[0.08em]">Simple & Transparent.</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mt-10">
-          {[
+          {(plans.length > 0 ? plans : [
             { name: 'Journalier', price: '10', period: '/jour', features: ['Accès 8h–23h', 'Wifi inclus', 'Café offert'], featured: false },
             { name: 'Hebdomadaire', price: '50', period: '/semaine', features: ['Accès 8h–23h', 'Wifi inclus', 'Café offert', 'Casier temporaire'], featured: false },
             { name: '2 Semaines', price: '90', period: '/2 semaines', features: ['Accès illimité', 'Wifi inclus', 'Café offert', 'Casier personnel'], featured: true },
             { name: 'Mensuel', price: '160', period: '/mois', features: ['Accès illimité', 'Bureau dédié', 'Locker personnel', 'Support prioritaire'], featured: false },
-          ].map((plan, i) => (
+          ]).map((plan, i) => (
             <div
               key={i}
               className={`bg-bg border rounded-[20px] p-8 relative overflow-hidden transition-colors duration-300 ${

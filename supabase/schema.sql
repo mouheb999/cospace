@@ -129,6 +129,18 @@ CREATE TABLE settings (
 );
 
 -- =============================================
+-- DAILY REVENUE TABLE (manual logging)
+-- =============================================
+CREATE TABLE daily_revenue (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  date DATE NOT NULL,
+  amount DECIMAL(10,2) NOT NULL,
+  note TEXT,
+  logged_by UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- =============================================
 -- MESSAGES TABLE (User <-> Responsable chat)
 -- =============================================
 CREATE TABLE messages (

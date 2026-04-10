@@ -1,95 +1,227 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button, Input, Badge, Avatar } from '@/components/ui'
 import {
   LayoutGrid, Users, DollarSign, TrendingUp, Tag, Bell, Settings,
-  AlertTriangle, ChevronRight, Download, Plus, Search, LogOut
+  AlertTriangle, ChevronRight, Download, Plus, Search, LogOut, X, Loader2
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth/context'
+import { createClient } from '@/lib/supabase/client'
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer
 } from 'recharts'
 
 type AdminPage = 'overview' | 'members' | 'revenue' | 'leaderboard' | 'pricing' | 'announce' | 'settings'
 
-const revenueData = [
-  { day: 'Lun', value: 3000 },
-  { day: 'Mar', value: 4500 },
-  { day: 'Mer', value: 5200 },
-  { day: 'Jeu', value: 4000 },
-  { day: 'Ven', value: 6500 },
-  { day: 'Sam', value: 5000 },
-  { day: 'Dim', value: 7200 },
-]
-
-const mockMembers = [
-  { name: 'Karim Bencherif', initials: 'KB', plan: 'Trimestriel', expiry: '15 juin 2026', streak: 62, status: 'active' },
-  { name: 'Sara Boudiaf', initials: 'SB', plan: 'Trimestriel', expiry: '10 mai 2026', streak: 45, status: 'active' },
-  { name: 'Yasmine Khelifi', initials: 'YK', plan: 'Mensuel', expiry: '24 avr 2026', streak: 12, status: 'active' },
-  { name: 'Lyes Hamidouche', initials: 'LH', plan: 'Mensuel', expiry: '01 avr 2026', streak: 0, status: 'inactive' },
-  { name: 'Nadia Bouzid', initials: 'NB', plan: 'Hebdomadaire', expiry: '28 mars 2026', streak: 5, status: 'expiring' },
-  { name: 'Ryad Kaci', initials: 'RK', plan: 'Mensuel', expiry: '05 avr 2026', streak: 8, status: 'active' },
-]
-
-const mockPricing = [
-  { id: 'pr-1', name: 'Journalier', desc: 'Accès 1 jour', price: 10 },
-  { id: 'pr-2', name: 'Hebdomadaire', desc: '7 jours consécutifs', price: 50 },
-  { id: 'pr-3', name: '2 Semaines', desc: '14 jours · Le plus populaire', price: 90 },
-  { id: 'pr-4', name: 'Mensuel', desc: '30 jours', price: 160 },
-]
-
-const mockAnnouncements = [
-  { id: 1, title: 'Maintenance réseau samedi matin', body: 'Le réseau Wifi sera coupé de 8h à 10h samedi 28 mars.', date: '22 mars 2026', pinned: true },
-  { id: 2, title: 'Nouvel espace rooftop ouvert ! 🎉', body: 'Le rooftop est maintenant disponible pour les événements.', date: '20 mars 2026', pinned: false },
-]
+interface Member { id: string; email: string; first_name: string; last_name: string; avatar_url: string | null; current_streak: number; longest_streak: number; created_at: string; role: string }
+interface Membership { id: string; user_id: string; plan_type: string; price_paid: number; start_date: string; end_date: string; status: string }
+interface Pricing { id: string; plan_type: string; name: string; description: string; price: number; duration_days: number; features: string[]; is_featured: boolean }
+interface Announcement { id: string; title: string; content: string; is_pinned: boolean; created_at: string; created_by: string }
+interface DailyRevenue { id: string; date: string; amount: number; note: string | null; logged_by: string; created_at: string }
+interface PriceAudit { id: string; plan_type: string; old_price: number; new_price: number; changed_by: string; created_at: string }
+interface LeaderboardEntry { user_id: string; first_name: string; last_name: string; streak: number; checked_in_today: boolean }
 
 export default function AdminDashboard() {
   const router = useRouter()
-  const { signOut } = useAuth()
+  const { user, signOut } = useAuth()
+  const supabase = createClient()
+
   const [activePage, setActivePage] = useState<AdminPage>('overview')
-  const [prices, setPrices] = useState(mockPricing)
+  const [loading, setLoading] = useState(true)
+
+  // Data states
+  const [members, setMembers] = useState<Member[]>([])
+  const [allMemberships, setAllMemberships] = useState<Membership[]>([])
+  const [pricing, setPricing] = useState<Pricing[]>([])
   const [changedPrices, setChangedPrices] = useState<Set<string>>(new Set())
-  const [announcements, setAnnouncements] = useState(mockAnnouncements)
+  const [announcements, setAnnouncements] = useState<Announcement[]>([])
+  const [dailyRevenue, setDailyRevenue] = useState<DailyRevenue[]>([])
+  const [priceAudit, setPriceAudit] = useState<PriceAudit[]>([])
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
+  const [checkinsTodayCount, setCheckinsTodayCount] = useState(0)
+  const [rewardText, setRewardText] = useState('')
+
+  // UI states
+  const [searchQuery, setSearchQuery] = useState('')
+  const [filterPlan, setFilterPlan] = useState('all')
+  const [filterStatus, setFilterStatus] = useState('all')
+
+  // Announcements form
   const [newAnnTitle, setNewAnnTitle] = useState('')
   const [newAnnBody, setNewAnnBody] = useState('')
   const [newAnnPinned, setNewAnnPinned] = useState(false)
-  const [rewardText, setRewardText] = useState('🎁 Récompense : 1 mois gratuit + Badge Champion')
 
-  const navItems = [
-    { id: 'overview' as const, label: 'Vue Globale', icon: LayoutGrid },
-    { id: 'members' as const, label: 'Membres', icon: Users, badge: '1 284' },
-    { id: 'revenue' as const, label: 'Revenus', icon: DollarSign },
-    { id: 'leaderboard' as const, label: 'Classement', icon: TrendingUp },
-    { id: 'pricing' as const, label: 'Tarifs', icon: Tag },
-    { id: 'announce' as const, label: 'Annonces', icon: Bell, badgeDanger: '2' },
-    { id: 'settings' as const, label: 'Paramètres', icon: Settings },
-  ]
+  // Revenue logging
+  const [revAmount, setRevAmount] = useState('')
+  const [revNote, setRevNote] = useState('')
+  const [revDate, setRevDate] = useState(new Date().toISOString().split('T')[0])
 
+  // Subscription assignment
+  const [assignUser, setAssignUser] = useState<Member | null>(null)
+  const [assignPlan, setAssignPlan] = useState('')
+  const [assignPrice, setAssignPrice] = useState('')
+  const [assigning, setAssigning] = useState(false)
+
+  // Fetch all data
+  const fetchData = useCallback(async () => {
+    if (!user) return
+    setLoading(true)
+    const today = new Date().toISOString().split('T')[0]
+
+    const [membersRes, membershipsRes, pricingRes, annRes, revRes, auditRes, checkinsRes, lbRes, lsRes] = await Promise.all([
+      supabase.from('profiles').select('*').eq('role', 'client').order('created_at', { ascending: false }),
+      supabase.from('memberships').select('*').order('created_at', { ascending: false }),
+      supabase.from('pricing').select('*').order('price', { ascending: true }),
+      supabase.from('announcements').select('*').order('created_at', { ascending: false }),
+      supabase.from('daily_revenue').select('*').order('date', { ascending: false }).limit(90),
+      supabase.from('price_audit').select('*').order('created_at', { ascending: false }).limit(10),
+      supabase.from('checkins').select('id', { count: 'exact', head: true }).gte('checked_in_at', today + 'T00:00:00').lte('checked_in_at', today + 'T23:59:59'),
+      supabase.rpc('get_leaderboard' as never, { limit_count: 10 } as never),
+      supabase.from('leaderboard_settings').select('*').limit(1),
+    ])
+
+    if (membersRes.data) setMembers(membersRes.data as Member[])
+    if (membershipsRes.data) setAllMemberships(membershipsRes.data as Membership[])
+    if (pricingRes.data) setPricing(pricingRes.data as Pricing[])
+    if (annRes.data) setAnnouncements(annRes.data as Announcement[])
+    if (revRes.data) setDailyRevenue(revRes.data as DailyRevenue[])
+    if (auditRes.data) setPriceAudit(auditRes.data as PriceAudit[])
+    setCheckinsTodayCount(checkinsRes.count || 0)
+    if ((lbRes as any).data) setLeaderboard((lbRes as any).data as LeaderboardEntry[])
+    if (lsRes.data && lsRes.data.length > 0) setRewardText((lsRes.data[0] as any).reward_text || '')
+
+    setLoading(false)
+  }, [user])
+
+  useEffect(() => { fetchData() }, [fetchData])
+
+  // Computed KPIs
+  const activeMembers = members.filter(m => allMemberships.some(ms => ms.user_id === m.id && ms.status === 'active')).length
+  const now = new Date()
+  const thisMonthRevenue = dailyRevenue.filter(r => { const d = new Date(r.date); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() }).reduce((s, r) => s + Number(r.amount), 0)
+  const lastMonthRevenue = dailyRevenue.filter(r => { const d = new Date(r.date); const lm = new Date(now.getFullYear(), now.getMonth() - 1, 1); return d.getMonth() === lm.getMonth() && d.getFullYear() === lm.getFullYear() }).reduce((s, r) => s + Number(r.amount), 0)
+  const revenueDelta = lastMonthRevenue > 0 ? Math.round(((thisMonthRevenue - lastMonthRevenue) / lastMonthRevenue) * 100) : 0
+
+  // Revenue chart data (last 7 days)
+  const revenueChartData = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(); d.setDate(d.getDate() - (6 - i))
+    const dateStr = d.toISOString().split('T')[0]
+    const entry = dailyRevenue.find(r => r.date === dateStr)
+    return { day: d.toLocaleDateString('fr-FR', { weekday: 'short' }).replace('.', ''), value: entry ? Number(entry.amount) : 0 }
+  })
+
+  // Members with their active membership
+  const getMembershipForUser = (userId: string) => allMemberships.find(m => m.user_id === userId && m.status === 'active')
+  const getMemberStatus = (userId: string) => {
+    const ms = getMembershipForUser(userId)
+    if (!ms) return 'inactive'
+    const daysLeft = Math.ceil((new Date(ms.end_date).getTime() - Date.now()) / 86400000)
+    if (daysLeft <= 0) return 'expired'
+    if (daysLeft <= 7) return 'expiring'
+    return 'active'
+  }
+
+  // Filter members
+  const filteredMembers = members.filter(m => {
+    const matchSearch = !searchQuery || `${m.first_name} ${m.last_name} ${m.email}`.toLowerCase().includes(searchQuery.toLowerCase())
+    const ms = getMembershipForUser(m.id)
+    const matchPlan = filterPlan === 'all' || (ms && ms.plan_type === filterPlan)
+    const status = getMemberStatus(m.id)
+    const matchStatus = filterStatus === 'all' || status === filterStatus
+    return matchSearch && matchPlan && matchStatus
+  })
+
+  // Handlers
   const handlePriceChange = (id: string, value: number) => {
-    setPrices(prices.map(p => p.id === id ? { ...p, price: value } : p))
+    setPricing(pricing.map(p => p.id === id ? { ...p, price: value } : p))
     setChangedPrices(new Set([...changedPrices, id]))
   }
 
-  const savePrices = () => {
+  const savePrices = async () => {
+    for (const id of changedPrices) {
+      const p = pricing.find(x => x.id === id)
+      if (!p) continue
+      const { data: old } = await supabase.from('pricing').select('price').eq('id', id).single()
+      await supabase.from('pricing').update({ price: p.price } as never).eq('id', id)
+      if (old && user) {
+        await supabase.from('price_audit').insert({ pricing_id: id, plan_type: p.plan_type, old_price: (old as any).price, new_price: p.price, changed_by: user.id } as never)
+      }
+    }
     setChangedPrices(new Set())
-    alert('Tarifs sauvegardés !')
+    fetchData()
   }
 
-  const createAnnouncement = () => {
-    if (!newAnnTitle || !newAnnBody) return
-    setAnnouncements([
-      { id: Date.now(), title: newAnnTitle, body: newAnnBody, date: 'Maintenant', pinned: newAnnPinned },
-      ...announcements
-    ])
-    setNewAnnTitle('')
-    setNewAnnBody('')
-    setNewAnnPinned(false)
+  const createAnnouncement = async () => {
+    if (!newAnnTitle || !newAnnBody || !user) return
+    await supabase.from('announcements').insert({ title: newAnnTitle, content: newAnnBody, is_pinned: newAnnPinned, created_by: user.id } as never)
+    setNewAnnTitle(''); setNewAnnBody(''); setNewAnnPinned(false)
+    fetchData()
   }
 
-  const deleteAnnouncement = (id: number) => {
-    setAnnouncements(announcements.filter(a => a.id !== id))
+  const deleteAnnouncement = async (id: string) => {
+    await supabase.from('announcements').delete().eq('id', id)
+    fetchData()
+  }
+
+  const logRevenue = async () => {
+    if (!revAmount || !user) return
+    await supabase.from('daily_revenue').insert({ date: revDate, amount: Number(revAmount), note: revNote || null, logged_by: user.id } as never)
+    setRevAmount(''); setRevNote(''); setRevDate(new Date().toISOString().split('T')[0])
+    fetchData()
+  }
+
+  const assignSubscription = async () => {
+    if (!assignUser || !assignPlan || !assignPrice || !user) return
+    setAssigning(true)
+    const plan = pricing.find(p => p.plan_type === assignPlan)
+    const startDate = new Date().toISOString().split('T')[0]
+    const endDate = new Date(Date.now() + (plan?.duration_days || 30) * 86400000).toISOString().split('T')[0]
+
+    const { data: ms } = await supabase.from('memberships').insert({
+      user_id: assignUser.id, plan_type: assignPlan, price_paid: Number(assignPrice), start_date: startDate, end_date: endDate, status: 'active'
+    } as never).select().single()
+
+    if (ms) {
+      await supabase.from('income_logs').insert({ user_id: assignUser.id, membership_id: (ms as any).id, amount: Number(assignPrice), plan_type: assignPlan } as never)
+    }
+
+    setAssignUser(null); setAssignPlan(''); setAssignPrice('')
+    setAssigning(false)
+    fetchData()
+  }
+
+  const saveRewardText = async () => {
+    if (!user) return
+    const { data: existing } = await supabase.from('leaderboard_settings').select('id').limit(1)
+    if (existing && existing.length > 0) {
+      await supabase.from('leaderboard_settings').update({ reward_text: rewardText, updated_by: user.id } as never).eq('id', (existing[0] as any).id)
+    } else {
+      await supabase.from('leaderboard_settings').insert({ reward_text: rewardText, updated_by: user.id } as never)
+    }
+  }
+
+  const formatDate = (d: string) => new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })
+  const formatShortDate = (d: string) => new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
+  const planLabel = (t: string) => ({ daily: 'Journalier', weekly: 'Hebdomadaire', biweekly: '2 Semaines', monthly: 'Mensuel', quarterly: 'Trimestriel' }[t] || t)
+
+  const navItems = [
+    { id: 'overview' as const, label: 'Vue Globale', icon: LayoutGrid },
+    { id: 'members' as const, label: 'Membres', icon: Users, badge: String(members.length) },
+    { id: 'revenue' as const, label: 'Revenus', icon: DollarSign },
+    { id: 'leaderboard' as const, label: 'Classement', icon: TrendingUp },
+    { id: 'pricing' as const, label: 'Tarifs', icon: Tag },
+    { id: 'announce' as const, label: 'Annonces', icon: Bell, badgeDanger: String(announcements.length) },
+    { id: 'settings' as const, label: 'Paramètres', icon: Settings },
+  ]
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-bg flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-teal" />
+      </div>
+    )
   }
 
   return (
@@ -177,64 +309,47 @@ export default function AdminDashboard() {
             <div className="flex items-center justify-between mb-7">
               <div>
                 <h1 className="font-display text-[2.4rem] tracking-[0.06em]">Vue Globale</h1>
-                <p className="text-[0.75rem] text-muted mt-0.5">Mardi 24 mars 2026 · Temps réel</p>
+                <p className="text-[0.75rem] text-muted mt-0.5">{new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} · Temps réel</p>
               </div>
               <div className="flex gap-2">
-                <Button variant="outline" size="sm">
-                  <Download size={14} /> Exporter CSV
-                </Button>
-                <Button variant="teal" size="sm">
-                  <Plus size={14} /> Nouveau membre
+                <Button variant="teal" size="sm" onClick={() => setActivePage('members')}>
+                  <Plus size={14} /> Gérer membres
                 </Button>
               </div>
             </div>
 
-            {/* Churn Alert */}
-            <div className="bg-danger/[0.08] border border-danger/25 rounded-[14px] p-4 flex items-center gap-3 mb-5 text-[0.82rem] text-[#ff8080]">
-              <AlertTriangle size={20} />
-              <div><strong>7 membres inactifs</strong> depuis plus de 7 jours — risque de churn détecté.</div>
-              <Button variant="danger" size="sm" className="ml-auto">Voir</Button>
-            </div>
+            {/* Inactive alert */}
+            {(() => { const inactiveCount = members.filter(m => getMemberStatus(m.id) === 'inactive').length; return inactiveCount > 0 ? (
+              <div className="bg-danger/[0.08] border border-danger/25 rounded-[14px] p-4 flex items-center gap-3 mb-5 text-[0.82rem] text-[#ff8080]">
+                <AlertTriangle size={20} />
+                <div><strong>{inactiveCount} membre{inactiveCount > 1 ? 's' : ''} sans abonnement</strong> — aucun plan actif.</div>
+                <Button variant="danger" size="sm" className="ml-auto" onClick={() => { setFilterStatus('inactive'); setActivePage('members') }}>Voir</Button>
+              </div>
+            ) : null })()}
 
             {/* KPI Grid */}
             <div className="grid grid-cols-4 gap-4 mb-6">
               {[
-                { icon: '💰', label: 'Revenus ce mois', value: '4 820 TND', delta: '↑ +12%', color: 'teal' },
-                { icon: '👥', label: 'Membres actifs', value: '1 284', delta: '↑ +8.2%', color: 'lime' },
-                { icon: '✅', label: 'Check-ins aujourd\'hui', value: '47', delta: '↑ vs 38', color: 'yellow-bright' },
-                { icon: '🔄', label: 'Rétention mensuelle', value: '84%', delta: 'Objectif : 85%', color: 'olive' },
+                { icon: '💰', label: 'Revenus ce mois', value: `${thisMonthRevenue.toLocaleString('fr-FR')} TND`, delta: revenueDelta !== 0 ? `${revenueDelta > 0 ? '↑' : '↓'} ${revenueDelta}%` : '—', color: 'teal' },
+                { icon: '👥', label: 'Membres actifs', value: String(activeMembers), delta: `${members.length} inscrits`, color: 'lime' },
+                { icon: '✅', label: 'Check-ins aujourd\'hui', value: String(checkinsTodayCount), delta: '', color: 'yellow-bright' },
+                { icon: '🔄', label: 'Total membres', value: String(members.length), delta: '', color: 'olive' },
               ].map((kpi, i) => (
                 <div key={i} className="bg-surface border border-border rounded-2xl p-5 relative overflow-hidden hover:border-teal/25 transition-colors">
                   <div className={`absolute top-0 left-0 right-0 h-0.5 bg-${kpi.color}`} />
                   <div className="text-[1.4rem] mb-2.5">{kpi.icon}</div>
                   <div className="text-[0.62rem] tracking-[0.12em] uppercase text-muted mb-1.5">{kpi.label}</div>
                   <div className={`font-display text-[2.2rem] leading-none tracking-[0.03em] text-${kpi.color}`}>{kpi.value}</div>
-                  <div className="text-[0.65rem] text-muted mt-1.5">
-                    <span className="text-success">{kpi.delta.split(' ')[0]}</span> {kpi.delta.split(' ').slice(1).join(' ')}
-                  </div>
+                  {kpi.delta && <div className="text-[0.65rem] text-muted mt-1.5"><span className="text-success">{kpi.delta}</span></div>}
                 </div>
               ))}
             </div>
 
             {/* Revenue Chart */}
             <div className="bg-surface border border-border rounded-2xl p-6 mb-5">
-              <div className="flex items-center justify-between mb-5">
-                <h3 className="font-display text-[1.2rem] tracking-[0.06em]">Revenus — Évolution</h3>
-                <div className="flex gap-1.5">
-                  {['7j', '30j', '90j'].map((period, i) => (
-                    <button
-                      key={period}
-                      className={`px-3 py-1.5 rounded-lg text-[0.68rem] font-bold cursor-pointer transition-all border ${
-                        i === 0 ? 'bg-teal/15 text-teal border-teal/30' : 'bg-surface2 text-muted border-border'
-                      }`}
-                    >
-                      {period}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              <h3 className="font-display text-[1.2rem] tracking-[0.06em] mb-5">Revenus — 7 Derniers Jours</h3>
               <ResponsiveContainer width="100%" height={160}>
-                <AreaChart data={revenueData}>
+                <AreaChart data={revenueChartData}>
                   <defs>
                     <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#5bbfb5" stopOpacity={0.3} />
@@ -242,10 +357,7 @@ export default function AdminDashboard() {
                     </linearGradient>
                   </defs>
                   <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: 'rgba(255,255,255,0.3)', fontSize: 10 }} />
-                  <Tooltip
-                    contentStyle={{ background: '#141414', border: '1px solid rgba(91,191,181,0.2)', borderRadius: 8 }}
-                    labelStyle={{ color: '#f2ede8' }}
-                  />
+                  <Tooltip contentStyle={{ background: '#141414', border: '1px solid rgba(91,191,181,0.2)', borderRadius: 8 }} labelStyle={{ color: '#f2ede8' }} />
                   <Area type="monotone" dataKey="value" stroke="#5bbfb5" strokeWidth={2.5} fill="url(#colorValue)" />
                 </AreaChart>
               </ResponsiveContainer>
@@ -253,11 +365,10 @@ export default function AdminDashboard() {
 
             {/* Two Column Layout */}
             <div className="grid grid-cols-2 gap-5">
-              {/* Recent Members */}
               <div className="bg-surface border border-border rounded-2xl p-6">
                 <div className="flex items-center justify-between mb-5">
                   <h3 className="font-display text-[1.2rem] tracking-[0.06em]">Membres Récents</h3>
-                  <Badge variant="teal">5 nouveaux</Badge>
+                  <Badge variant="teal">{members.length} inscrits</Badge>
                 </div>
                 <table className="w-full">
                   <thead>
@@ -268,42 +379,33 @@ export default function AdminDashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {mockMembers.slice(0, 4).map((m, i) => (
-                      <tr key={i} className="border-b border-teal/5 last:border-none hover:bg-white/[0.02]">
-                        <td className="py-3">
-                          <div className="flex items-center gap-2.5">
-                            <Avatar name={m.name} size="sm" />
-                            <span className="text-[0.82rem]">{m.name.split(' ')[0]} {m.name.split(' ')[1]?.[0]}.</span>
-                          </div>
-                        </td>
-                        <td><Badge variant={m.plan === 'Trimestriel' ? 'lime' : 'teal'}>{m.plan}</Badge></td>
-                        <td className="text-[0.82rem]">{m.streak > 0 ? `🔥 ${m.streak}` : '-'}</td>
-                      </tr>
-                    ))}
+                    {members.slice(0, 5).map((m) => {
+                      const ms = getMembershipForUser(m.id)
+                      return (
+                        <tr key={m.id} className="border-b border-teal/5 last:border-none hover:bg-white/[0.02]">
+                          <td className="py-3">
+                            <div className="flex items-center gap-2.5">
+                              <Avatar name={`${m.first_name} ${m.last_name}`} size="sm" avatarUrl={m.avatar_url || undefined} />
+                              <span className="text-[0.82rem]">{m.first_name} {m.last_name?.[0]}.</span>
+                            </div>
+                          </td>
+                          <td>{ms ? <Badge variant="teal">{planLabel(ms.plan_type)}</Badge> : <span className="text-muted text-[0.75rem]">—</span>}</td>
+                          <td className="text-[0.82rem]">{m.current_streak > 0 ? `🔥 ${m.current_streak}` : '-'}</td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
 
-              {/* Quick Actions */}
               <div className="bg-surface border border-border rounded-2xl p-6">
                 <h3 className="font-display text-[1.2rem] tracking-[0.06em] mb-5">Actions Rapides</h3>
                 <div className="flex flex-col gap-2.5">
                   <Button variant="teal" fullWidth onClick={() => setActivePage('announce')}>📢 Créer une annonce</Button>
                   <Button variant="outline" fullWidth onClick={() => setActivePage('members')}>👥 Gérer les membres</Button>
                   <Button variant="outline" fullWidth onClick={() => setActivePage('pricing')}>💰 Modifier les tarifs</Button>
+                  <Button variant="outline" fullWidth onClick={() => setActivePage('revenue')}>📊 Logger les revenus</Button>
                   <Button variant="ghost" fullWidth onClick={() => setActivePage('settings')}>⚙️ Paramètres</Button>
-                </div>
-
-                <div className="mt-4 pt-4 border-t border-border">
-                  <div className="text-[0.62rem] tracking-[0.12em] uppercase text-muted mb-2.5 flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse-glow" />
-                    Activité temps réel
-                  </div>
-                  <div className="text-[0.75rem] text-muted flex flex-col gap-2">
-                    <div>✅ <strong className="text-white">Yasmine K.</strong> — check-in · 14:32</div>
-                    <div>🆕 <strong className="text-white">Nouveau membre</strong> — inscription · 13:55</div>
-                    <div>💳 <strong className="text-white">Sara B.</strong> — renouvellement · 12:10</div>
-                  </div>
                 </div>
               </div>
             </div>
@@ -316,11 +418,7 @@ export default function AdminDashboard() {
             <div className="flex items-center justify-between mb-7">
               <div>
                 <h1 className="font-display text-[2.4rem] tracking-[0.06em]">Membres</h1>
-                <p className="text-[0.75rem] text-muted mt-0.5">1 284 membres enregistrés</p>
-              </div>
-              <div className="flex gap-2">
-                <Button variant="ghost" size="sm"><Download size={14} /> Exporter CSV</Button>
-                <Button variant="teal" size="sm"><Plus size={14} /> Ajouter</Button>
+                <p className="text-[0.75rem] text-muted mt-0.5">{members.length} membres enregistrés</p>
               </div>
             </div>
 
@@ -331,19 +429,19 @@ export default function AdminDashboard() {
                 <input
                   className="w-full bg-surface2 border border-border text-white py-3 pl-11 pr-4 rounded-[10px] text-[0.9rem] outline-none focus:border-teal"
                   placeholder="Rechercher un membre..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
                 />
               </div>
-              <select className="bg-surface2 border border-border text-white py-3 px-4 rounded-[10px] text-[0.9rem] outline-none w-40">
-                <option>Tous les plans</option>
-                <option>Mensuel</option>
-                <option>Trimestriel</option>
-                <option>Hebdomadaire</option>
+              <select className="bg-surface2 border border-border text-white py-3 px-4 rounded-[10px] text-[0.9rem] outline-none w-40" value={filterPlan} onChange={(e) => setFilterPlan(e.target.value)}>
+                <option value="all">Tous les plans</option>
+                {pricing.map(p => <option key={p.plan_type} value={p.plan_type}>{p.name}</option>)}
               </select>
-              <select className="bg-surface2 border border-border text-white py-3 px-4 rounded-[10px] text-[0.9rem] outline-none w-36">
-                <option>Tous statuts</option>
-                <option>Actif</option>
-                <option>Expiré</option>
-                <option>Inactif 7j</option>
+              <select className="bg-surface2 border border-border text-white py-3 px-4 rounded-[10px] text-[0.9rem] outline-none w-36" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+                <option value="all">Tous statuts</option>
+                <option value="active">Actif</option>
+                <option value="expiring">Expire bientôt</option>
+                <option value="inactive">Sans abonnement</option>
               </select>
             </div>
 
@@ -361,30 +459,78 @@ export default function AdminDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {mockMembers.map((m, i) => (
-                    <tr key={i} className="border-b border-teal/5 last:border-none hover:bg-white/[0.02]">
-                      <td className="p-3.5">
-                        <div className="flex items-center gap-2.5">
-                          <Avatar name={m.name} size="sm" />
-                          <span className="text-[0.82rem]">{m.name}</span>
-                        </div>
-                      </td>
-                      <td className="p-3.5 text-[0.82rem]">{m.plan}</td>
-                      <td className="p-3.5 text-[0.82rem]">{m.expiry}</td>
-                      <td className="p-3.5 text-[0.82rem]">{m.streak > 0 ? `🔥 ${m.streak}` : '0'}</td>
-                      <td className="p-3.5">
-                        <Badge variant={m.status === 'active' ? 'teal' : m.status === 'expiring' ? 'warn' : 'danger'}>
-                          {m.status === 'active' ? 'Actif' : m.status === 'expiring' ? 'Expire bientôt' : 'Inactif'}
-                        </Badge>
-                      </td>
-                      <td className="p-3.5">
-                        <Button variant="ghost" size="sm">Voir</Button>
-                      </td>
-                    </tr>
-                  ))}
+                  {filteredMembers.map((m) => {
+                    const ms = getMembershipForUser(m.id)
+                    const status = getMemberStatus(m.id)
+                    return (
+                      <tr key={m.id} className="border-b border-teal/5 last:border-none hover:bg-white/[0.02]">
+                        <td className="p-3.5">
+                          <div className="flex items-center gap-2.5">
+                            <Avatar name={`${m.first_name} ${m.last_name}`} size="sm" avatarUrl={m.avatar_url || undefined} />
+                            <div>
+                              <span className="text-[0.82rem]">{m.first_name} {m.last_name}</span>
+                              <div className="text-[0.65rem] text-muted">{m.email}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="p-3.5 text-[0.82rem]">{ms ? planLabel(ms.plan_type) : '—'}</td>
+                        <td className="p-3.5 text-[0.82rem]">{ms ? formatDate(ms.end_date) : '—'}</td>
+                        <td className="p-3.5 text-[0.82rem]">{m.current_streak > 0 ? `🔥 ${m.current_streak}` : '0'}</td>
+                        <td className="p-3.5">
+                          <Badge variant={status === 'active' ? 'teal' : status === 'expiring' ? 'warn' : 'danger'}>
+                            {status === 'active' ? 'Actif' : status === 'expiring' ? 'Expire bientôt' : 'Inactif'}
+                          </Badge>
+                        </td>
+                        <td className="p-3.5">
+                          <Button variant="teal" size="sm" onClick={() => { setAssignUser(m); setAssignPlan(''); setAssignPrice('') }}>
+                            Abonnement
+                          </Button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                  {filteredMembers.length === 0 && (
+                    <tr><td colSpan={6} className="p-8 text-center text-muted text-[0.85rem]">Aucun membre trouvé</td></tr>
+                  )}
                 </tbody>
               </table>
             </div>
+
+            {/* Assign Subscription Modal */}
+            {assignUser && (
+              <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={() => setAssignUser(null)}>
+                <div className="bg-surface border border-border rounded-2xl p-6 w-[420px] max-w-[90vw]" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center justify-between mb-5">
+                    <h3 className="font-display text-[1.2rem] tracking-[0.06em]">Assigner un abonnement</h3>
+                    <button onClick={() => setAssignUser(null)} className="text-muted hover:text-white bg-transparent border-none cursor-pointer"><X size={18} /></button>
+                  </div>
+                  <div className="flex items-center gap-3 mb-5 p-3 bg-surface2 rounded-xl">
+                    <Avatar name={`${assignUser.first_name} ${assignUser.last_name}`} size="sm" avatarUrl={assignUser.avatar_url || undefined} />
+                    <div>
+                      <div className="font-bold text-[0.9rem]">{assignUser.first_name} {assignUser.last_name}</div>
+                      <div className="text-[0.68rem] text-muted">{assignUser.email}</div>
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-3">
+                    <div>
+                      <label className="text-[0.72rem] font-semibold tracking-[0.08em] uppercase text-muted mb-1.5 block">Plan</label>
+                      <select
+                        className="w-full bg-surface2 border border-border text-white py-3 px-4 rounded-[10px] text-[0.85rem] outline-none focus:border-teal"
+                        value={assignPlan}
+                        onChange={(e) => { setAssignPlan(e.target.value); const p = pricing.find(x => x.plan_type === e.target.value); if (p) setAssignPrice(String(p.price)) }}
+                      >
+                        <option value="">Choisir un plan...</option>
+                        {pricing.map(p => <option key={p.plan_type} value={p.plan_type}>{p.name} — {p.price} TND ({p.duration_days}j)</option>)}
+                      </select>
+                    </div>
+                    <Input label="Montant payé (TND)" type="number" value={assignPrice} onChange={(e) => setAssignPrice(e.target.value)} placeholder="0" />
+                    <Button variant="teal" fullWidth onClick={assignSubscription} disabled={!assignPlan || !assignPrice || assigning}>
+                      {assigning ? <Loader2 size={16} className="animate-spin" /> : 'Confirmer l\'abonnement'}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -394,86 +540,79 @@ export default function AdminDashboard() {
             <div className="flex items-center justify-between mb-7">
               <div>
                 <h1 className="font-display text-[2.4rem] tracking-[0.06em]">Revenus</h1>
-                <p className="text-[0.75rem] text-muted mt-0.5">Mars 2026</p>
+                <p className="text-[0.75rem] text-muted mt-0.5">{now.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}</p>
               </div>
-              <Button variant="ghost" size="sm"><Download size={14} /> Exporter CSV</Button>
             </div>
 
             {/* KPIs */}
             <div className="grid grid-cols-3 gap-4 mb-6">
               {[
-                { label: 'Ce mois', value: '4 820 TND', delta: '↑ +12%', color: 'teal' },
-                { label: 'Projection', value: '5 200 TND', delta: 'Estimé fin de mois', color: 'lime' },
-                { label: 'Transactions', value: '184', delta: 'Ce mois', color: 'yellow-bright' },
+                { label: 'Ce mois', value: `${thisMonthRevenue.toLocaleString('fr-FR')} TND`, delta: revenueDelta !== 0 ? `${revenueDelta > 0 ? '↑' : '↓'} ${revenueDelta}%` : '—', color: 'teal' },
+                { label: 'Mois précédent', value: `${lastMonthRevenue.toLocaleString('fr-FR')} TND`, delta: '', color: 'lime' },
+                { label: 'Entrées loggées', value: String(dailyRevenue.filter(r => { const d = new Date(r.date); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() }).length), delta: 'Ce mois', color: 'yellow-bright' },
               ].map((kpi, i) => (
                 <div key={i} className="bg-surface border border-border rounded-2xl p-5">
                   <div className="text-[0.62rem] tracking-[0.12em] uppercase text-muted mb-1.5">{kpi.label}</div>
                   <div className={`font-display text-[2.2rem] leading-none text-${kpi.color}`}>{kpi.value}</div>
-                  <div className="text-[0.65rem] text-muted mt-1.5"><span className="text-success">{kpi.delta}</span></div>
+                  {kpi.delta && <div className="text-[0.65rem] text-muted mt-1.5"><span className="text-success">{kpi.delta}</span></div>}
                 </div>
               ))}
             </div>
 
+            {/* Log Revenue Form */}
+            <div className="bg-surface border border-border rounded-2xl p-6 mb-5">
+              <h3 className="font-display text-[1.2rem] tracking-[0.06em] mb-4">Enregistrer un revenu</h3>
+              <div className="grid grid-cols-4 gap-3 items-end">
+                <div>
+                  <label className="text-[0.72rem] font-semibold tracking-[0.08em] uppercase text-muted mb-1.5 block">Date</label>
+                  <input type="date" value={revDate} onChange={(e) => setRevDate(e.target.value)} className="w-full bg-surface2 border border-border text-white py-2.5 px-3 rounded-lg text-[0.85rem] outline-none focus:border-teal" />
+                </div>
+                <div>
+                  <label className="text-[0.72rem] font-semibold tracking-[0.08em] uppercase text-muted mb-1.5 block">Montant (TND)</label>
+                  <input type="number" value={revAmount} onChange={(e) => setRevAmount(e.target.value)} placeholder="0" className="w-full bg-surface2 border border-border text-white py-2.5 px-3 rounded-lg text-[0.85rem] outline-none focus:border-teal" />
+                </div>
+                <div>
+                  <label className="text-[0.72rem] font-semibold tracking-[0.08em] uppercase text-muted mb-1.5 block">Note (optionnel)</label>
+                  <input type="text" value={revNote} onChange={(e) => setRevNote(e.target.value)} placeholder="Ex: espèces, virement..." className="w-full bg-surface2 border border-border text-white py-2.5 px-3 rounded-lg text-[0.85rem] outline-none focus:border-teal" />
+                </div>
+                <Button variant="teal" onClick={logRevenue} disabled={!revAmount}>Enregistrer</Button>
+              </div>
+            </div>
+
             {/* Bar Chart */}
             <div className="bg-surface border border-border rounded-2xl p-6 mb-5">
-              <div className="flex items-center justify-between mb-5">
-                <h3 className="font-display text-[1.2rem] tracking-[0.06em]">Revenus Journaliers</h3>
-                <div className="flex gap-1.5">
-                  {['7j', '30j'].map((period, i) => (
-                    <button
-                      key={period}
-                      className={`px-3 py-1.5 rounded-lg text-[0.68rem] font-bold cursor-pointer transition-all border ${
-                        i === 0 ? 'bg-teal/15 text-teal border-teal/30' : 'bg-surface2 text-muted border-border'
-                      }`}
-                    >
-                      {period}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              <h3 className="font-display text-[1.2rem] tracking-[0.06em] mb-5">Revenus — 7 Derniers Jours</h3>
               <ResponsiveContainer width="100%" height={140}>
-                <BarChart data={revenueData}>
+                <BarChart data={revenueChartData}>
                   <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: 'rgba(255,255,255,0.3)', fontSize: 10 }} />
-                  <Tooltip
-                    contentStyle={{ background: '#141414', border: '1px solid rgba(91,191,181,0.2)', borderRadius: 8 }}
-                    labelStyle={{ color: '#f2ede8' }}
-                  />
+                  <Tooltip contentStyle={{ background: '#141414', border: '1px solid rgba(91,191,181,0.2)', borderRadius: 8 }} labelStyle={{ color: '#f2ede8' }} />
                   <Bar dataKey="value" fill="#5bbfb5" radius={[6, 6, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
 
-            {/* Transactions Table */}
+            {/* Revenue Log Table */}
             <div className="bg-surface border border-border rounded-2xl overflow-hidden">
-              <div className="p-4 border-b border-border font-display text-[1.1rem] tracking-[0.06em]">Transactions Récentes</div>
+              <div className="p-4 border-b border-border font-display text-[1.1rem] tracking-[0.06em]">Historique des Revenus</div>
               <table className="w-full">
                 <thead>
                   <tr className="text-left text-[0.62rem] font-bold tracking-[0.12em] uppercase text-muted border-b border-border">
-                    <th className="p-3.5">Membre</th>
-                    <th className="p-3.5">Formule</th>
-                    <th className="p-3.5">Montant</th>
                     <th className="p-3.5">Date</th>
+                    <th className="p-3.5">Montant</th>
+                    <th className="p-3.5">Note</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {[
-                    { name: 'Karim B.', initials: 'KB', plan: 'Mensuel', amount: '160 TND', date: '24 mars' },
-                    { name: 'Yasmine K.', initials: 'YK', plan: '2 Semaines', amount: '90 TND', date: '24 mars' },
-                    { name: 'Nadia B.', initials: 'NB', plan: 'Hebdomadaire', amount: '50 TND', date: '21 mars' },
-                    { name: 'Ryad K.', initials: 'RK', plan: 'Mensuel', amount: '160 TND', date: '20 mars' },
-                  ].map((t, i) => (
-                    <tr key={i} className="border-b border-teal/5 last:border-none hover:bg-white/[0.02]">
-                      <td className="p-3.5">
-                        <div className="flex items-center gap-2.5">
-                          <Avatar name={t.name} size="sm" />
-                          <span className="text-[0.82rem]">{t.name}</span>
-                        </div>
-                      </td>
-                      <td className="p-3.5 text-[0.82rem]">{t.plan}</td>
-                      <td className="p-3.5 text-[0.82rem] text-teal font-bold">{t.amount}</td>
-                      <td className="p-3.5 text-[0.82rem] text-muted">{t.date}</td>
+                  {dailyRevenue.slice(0, 20).map((r) => (
+                    <tr key={r.id} className="border-b border-teal/5 last:border-none hover:bg-white/[0.02]">
+                      <td className="p-3.5 text-[0.82rem]">{formatDate(r.date)}</td>
+                      <td className="p-3.5 text-[0.82rem] text-teal font-bold">{Number(r.amount).toLocaleString('fr-FR')} TND</td>
+                      <td className="p-3.5 text-[0.82rem] text-muted">{r.note || '—'}</td>
                     </tr>
                   ))}
+                  {dailyRevenue.length === 0 && (
+                    <tr><td colSpan={3} className="p-8 text-center text-muted text-[0.85rem]">Aucun revenu enregistré</td></tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -494,12 +633,8 @@ export default function AdminDashboard() {
             <div className="bg-surface border border-border rounded-2xl p-6 mb-5">
               <h3 className="font-display text-[1.2rem] tracking-[0.06em] mb-4">Texte de Récompense Champion</h3>
               <p className="text-[0.78rem] text-muted mb-3">Ce texte s&apos;affiche instantanément sur la carte Champion de tous les clients.</p>
-              <Input
-                label="Message"
-                value={rewardText}
-                onChange={(e) => setRewardText(e.target.value)}
-              />
-              <Button variant="teal" className="mt-4">Sauvegarder</Button>
+              <Input label="Message" value={rewardText} onChange={(e) => setRewardText(e.target.value)} />
+              <Button variant="teal" className="mt-4" onClick={saveRewardText}>Sauvegarder</Button>
             </div>
 
             {/* Top 10 Table */}
@@ -515,27 +650,27 @@ export default function AdminDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {[
-                    { rank: 1, name: 'Karim Bencherif', initials: 'KB', streak: 62, today: true },
-                    { rank: 2, name: 'Sara Boudiaf', initials: 'SB', streak: 45, today: true },
-                    { rank: 3, name: 'Amine Merzouk', initials: 'AM', streak: 38, today: false },
-                    { rank: 4, name: 'Yasmine K.', initials: 'YK', streak: 12, today: true },
-                    { rank: 5, name: 'Leila Benali', initials: 'LB', streak: 10, today: true },
-                  ].map((u, i) => (
-                    <tr key={i} className={`border-b border-teal/5 last:border-none hover:bg-white/[0.02] ${u.rank === 1 ? 'bg-gold/[0.04]' : ''}`}>
-                      <td className={`p-3.5 font-extrabold ${u.rank === 1 ? 'text-gold' : u.rank === 2 ? 'text-silver' : u.rank === 3 ? 'text-bronze' : 'text-muted'}`}>
-                        {u.rank === 1 ? '🥇' : u.rank === 2 ? '🥈' : u.rank === 3 ? '🥉' : ''} {u.rank}
-                      </td>
-                      <td className="p-3.5">
-                        <div className="flex items-center gap-2.5">
-                          <Avatar name={u.name} size="sm" gradient={u.rank === 1 ? 'gold' : 'teal'} />
-                          <span className="text-[0.82rem]">{u.name}</span>
-                        </div>
-                      </td>
-                      <td className="p-3.5 text-[0.82rem]">{u.rank <= 2 && <span className="animate-flame">🔥</span>} {u.streak}j</td>
-                      <td className="p-3.5 text-[0.82rem]">{u.today ? <span className="text-success">✓ Oui</span> : <span className="text-muted">—</span>}</td>
-                    </tr>
-                  ))}
+                  {leaderboard.map((u, i) => {
+                    const rank = i + 1
+                    return (
+                      <tr key={u.user_id} className={`border-b border-teal/5 last:border-none hover:bg-white/[0.02] ${rank === 1 ? 'bg-gold/[0.04]' : ''}`}>
+                        <td className={`p-3.5 font-extrabold ${rank === 1 ? 'text-gold' : rank === 2 ? 'text-silver' : rank === 3 ? 'text-bronze' : 'text-muted'}`}>
+                          {rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : ''} {rank}
+                        </td>
+                        <td className="p-3.5">
+                          <div className="flex items-center gap-2.5">
+                            <Avatar name={`${u.first_name} ${u.last_name}`} size="sm" gradient={rank === 1 ? 'gold' : 'teal'} />
+                            <span className="text-[0.82rem]">{u.first_name} {u.last_name}</span>
+                          </div>
+                        </td>
+                        <td className="p-3.5 text-[0.82rem]">{rank <= 2 && <span className="animate-flame">🔥</span>} {u.streak}j</td>
+                        <td className="p-3.5 text-[0.82rem]">{u.checked_in_today ? <span className="text-success">✓ Oui</span> : <span className="text-muted">—</span>}</td>
+                      </tr>
+                    )
+                  })}
+                  {leaderboard.length === 0 && (
+                    <tr><td colSpan={4} className="p-8 text-center text-muted text-[0.85rem]">Aucune donnée</td></tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -550,12 +685,12 @@ export default function AdminDashboard() {
                 <h1 className="font-display text-[2.4rem] tracking-[0.06em]">Tarifs</h1>
                 <p className="text-[0.75rem] text-muted mt-0.5">Modification en temps réel · Supabase sync</p>
               </div>
-              <Button variant="teal" onClick={savePrices}>💾 Sauvegarder tout</Button>
+              <Button variant="teal" onClick={savePrices} disabled={changedPrices.size === 0}>💾 Sauvegarder tout</Button>
             </div>
 
             {/* Price Rows */}
             <div className="mb-6">
-              {prices.map((p) => (
+              {pricing.map((p) => (
                 <div
                   key={p.id}
                   className={`flex items-center justify-between p-4 bg-surface rounded-[14px] mb-2.5 border-2 transition-colors ${
@@ -564,7 +699,7 @@ export default function AdminDashboard() {
                 >
                   <div>
                     <div className="font-bold">{p.name}</div>
-                    <div className="text-[0.72rem] text-muted">{p.desc}</div>
+                    <div className="text-[0.72rem] text-muted">{p.description} · {p.duration_days} jours</div>
                   </div>
                   <div className="flex items-center gap-2.5">
                     <input
@@ -581,31 +716,28 @@ export default function AdminDashboard() {
 
             {/* Audit Log */}
             <div className="bg-surface border border-border rounded-2xl p-6">
-              <h3 className="font-display text-[1.2rem] tracking-[0.06em] mb-4">Audit Log (5 derniers changements)</h3>
+              <h3 className="font-display text-[1.2rem] tracking-[0.06em] mb-4">Historique des changements</h3>
               <table className="w-full">
                 <thead>
                   <tr className="text-left text-[0.62rem] font-bold tracking-[0.12em] uppercase text-muted border-b border-border">
                     <th className="pb-2.5">Formule</th>
                     <th className="pb-2.5">Avant</th>
                     <th className="pb-2.5">Après</th>
-                    <th className="pb-2.5">Admin</th>
                     <th className="pb-2.5">Date</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {[
-                    { plan: 'Mensuel', before: '150', after: '160 TND', admin: 'Admin', date: '20 mars' },
-                    { plan: '2 Semaines', before: '80', after: '90 TND', admin: 'Admin', date: '15 mars' },
-                    { plan: 'Journalier', before: '8', after: '10 TND', admin: 'Admin', date: '01 mars' },
-                  ].map((a, i) => (
-                    <tr key={i} className="border-b border-teal/5 last:border-none">
-                      <td className="py-3 text-[0.82rem]">{a.plan}</td>
-                      <td className="py-3 text-[0.82rem] text-muted">{a.before}</td>
-                      <td className="py-3 text-[0.82rem] text-lime font-bold">{a.after}</td>
-                      <td className="py-3 text-[0.82rem]">{a.admin}</td>
-                      <td className="py-3 text-[0.82rem] text-muted">{a.date}</td>
+                  {priceAudit.map((a) => (
+                    <tr key={a.id} className="border-b border-teal/5 last:border-none">
+                      <td className="py-3 text-[0.82rem]">{planLabel(a.plan_type)}</td>
+                      <td className="py-3 text-[0.82rem] text-muted">{Number(a.old_price)} TND</td>
+                      <td className="py-3 text-[0.82rem] text-lime font-bold">{Number(a.new_price)} TND</td>
+                      <td className="py-3 text-[0.82rem] text-muted">{formatShortDate(a.created_at)}</td>
                     </tr>
                   ))}
+                  {priceAudit.length === 0 && (
+                    <tr><td colSpan={4} className="py-6 text-center text-muted text-[0.82rem]">Aucun changement enregistré</td></tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -662,11 +794,11 @@ export default function AdminDashboard() {
                 <div className="flex justify-between items-start">
                   <div>
                     <div className="font-bold text-[0.85rem] mb-1">{ann.title}</div>
-                    <div className="text-[0.78rem] text-muted">{ann.body}</div>
-                    <div className="text-[0.65rem] text-white/20 mt-2">{ann.date}</div>
+                    <div className="text-[0.78rem] text-muted">{ann.content}</div>
+                    <div className="text-[0.65rem] text-white/20 mt-2">{formatDate(ann.created_at)}</div>
                   </div>
                   <div className="flex gap-1.5 flex-shrink-0">
-                    {ann.pinned && <Badge variant="teal">📌 Épinglé</Badge>}
+                    {ann.is_pinned && <Badge variant="teal">📌 Épinglé</Badge>}
                     <Button variant="danger" size="sm" onClick={() => deleteAnnouncement(ann.id)}>Supprimer</Button>
                   </div>
                 </div>
