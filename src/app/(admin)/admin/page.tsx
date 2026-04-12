@@ -5,13 +5,15 @@ import { useRouter } from 'next/navigation'
 import { Button, Input, Badge, Avatar } from '@/components/ui'
 import {
   LayoutGrid, Users, DollarSign, TrendingUp, Tag, Bell, Settings,
-  AlertTriangle, ChevronRight, Download, Plus, Search, LogOut, X, Loader2, Menu
+  AlertTriangle, ChevronRight, Download, Plus, Search, LogOut, X, Loader2, Menu, FileText
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth/context'
 import { createClient } from '@/lib/supabase/client'
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer
 } from 'recharts'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 
 type AdminPage = 'overview' | 'members' | 'revenue' | 'leaderboard' | 'pricing' | 'announce' | 'settings'
 
@@ -59,6 +61,11 @@ export default function AdminDashboard() {
   const [revNote, setRevNote] = useState('')
   const [revDate, setRevDate] = useState(new Date().toISOString().split('T')[0])
 
+  // Revenue period toggle: 'daily' (last 7 days), 'weekly' (last 4 weeks), 'monthly' (last 6 months)
+  type RevPeriod = 'daily' | 'weekly' | 'monthly'
+  const [overviewPeriod, setOverviewPeriod] = useState<RevPeriod>('daily')
+  const [revPagePeriod, setRevPagePeriod] = useState<RevPeriod>('daily')
+
   // Subscription assignment
   const [assignUser, setAssignUser] = useState<Member | null>(null)
   const [assignPlan, setAssignPlan] = useState('')
@@ -105,13 +112,143 @@ export default function AdminDashboard() {
   const lastMonthRevenue = dailyRevenue.filter(r => { const d = new Date(r.date); const lm = new Date(now.getFullYear(), now.getMonth() - 1, 1); return d.getMonth() === lm.getMonth() && d.getFullYear() === lm.getFullYear() }).reduce((s, r) => s + Number(r.amount), 0)
   const revenueDelta = lastMonthRevenue > 0 ? Math.round(((thisMonthRevenue - lastMonthRevenue) / lastMonthRevenue) * 100) : 0
 
-  // Revenue chart data (last 7 days)
-  const revenueChartData = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(); d.setDate(d.getDate() - (6 - i))
-    const dateStr = d.toISOString().split('T')[0]
-    const entry = dailyRevenue.find(r => r.date === dateStr)
-    return { day: d.toLocaleDateString('fr-FR', { weekday: 'short' }).replace('.', ''), value: entry ? Number(entry.amount) : 0 }
-  })
+  // Build chart data for a given period
+  const buildChartData = (period: 'daily' | 'weekly' | 'monthly') => {
+    if (period === 'daily') {
+      return Array.from({ length: 7 }, (_, i) => {
+        const d = new Date(); d.setDate(d.getDate() - (6 - i))
+        const dateStr = d.toISOString().split('T')[0]
+        const entry = dailyRevenue.find(r => r.date === dateStr)
+        return { day: d.toLocaleDateString('fr-FR', { weekday: 'short' }).replace('.', ''), value: entry ? Number(entry.amount) : 0 }
+      })
+    } else if (period === 'weekly') {
+      return Array.from({ length: 4 }, (_, i) => {
+        const weekEnd = new Date(); weekEnd.setDate(weekEnd.getDate() - (i * 7))
+        const weekStart = new Date(weekEnd); weekStart.setDate(weekStart.getDate() - 6)
+        const total = dailyRevenue.filter(r => { const d = new Date(r.date); return d >= weekStart && d <= weekEnd }).reduce((s, r) => s + Number(r.amount), 0)
+        return { day: `S${4 - i}`, value: total }
+      }).reverse()
+    } else {
+      return Array.from({ length: 6 }, (_, i) => {
+        const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1)
+        const total = dailyRevenue.filter(r => { const rd = new Date(r.date); return rd.getMonth() === d.getMonth() && rd.getFullYear() === d.getFullYear() }).reduce((s, r) => s + Number(r.amount), 0)
+        return { day: d.toLocaleDateString('fr-FR', { month: 'short' }).replace('.', ''), value: total }
+      })
+    }
+  }
+
+  const revenueChartData = buildChartData(overviewPeriod)
+  const revPageChartData = buildChartData(revPagePeriod)
+
+  // Period label for chart title
+  const periodLabel = (p: 'daily' | 'weekly' | 'monthly') => ({ daily: '7 Derniers Jours', weekly: '4 Dernières Semaines', monthly: '6 Derniers Mois' }[p])
+
+  // Revenue for a given period (for KPIs)
+  const getRevenueForPeriod = (period: 'daily' | 'weekly' | 'monthly') => {
+    if (period === 'daily') {
+      const last7 = new Date(); last7.setDate(last7.getDate() - 7)
+      return dailyRevenue.filter(r => new Date(r.date) >= last7).reduce((s, r) => s + Number(r.amount), 0)
+    } else if (period === 'weekly') {
+      const last4w = new Date(); last4w.setDate(last4w.getDate() - 28)
+      return dailyRevenue.filter(r => new Date(r.date) >= last4w).reduce((s, r) => s + Number(r.amount), 0)
+    } else {
+      return thisMonthRevenue
+    }
+  }
+
+  // Filter revenue entries for a period (for PDF + table)
+  const getRevenueEntries = (period: 'daily' | 'weekly' | 'monthly') => {
+    const cutoff = new Date()
+    if (period === 'daily') cutoff.setDate(cutoff.getDate() - 7)
+    else if (period === 'weekly') cutoff.setDate(cutoff.getDate() - 28)
+    else cutoff.setMonth(cutoff.getMonth() - 6)
+    return dailyRevenue.filter(r => new Date(r.date) >= cutoff)
+  }
+
+  // PDF Generation
+  const downloadPDF = (period: 'daily' | 'weekly' | 'monthly') => {
+    const doc = new jsPDF()
+    const pLabel = { daily: 'Journalier', weekly: 'Hebdomadaire', monthly: 'Mensuel' }[period]
+    const entries = getRevenueEntries(period)
+    const totalRevenue = entries.reduce((s, r) => s + Number(r.amount), 0)
+    const avgRevenue = entries.length > 0 ? Math.round(totalRevenue / entries.length) : 0
+    const dateRange = entries.length > 0
+      ? `${formatDate(entries[entries.length - 1].date)} — ${formatDate(entries[0].date)}`
+      : '—'
+
+    // Header
+    doc.setFontSize(22)
+    doc.setTextColor(91, 191, 181)
+    doc.text('CoSpace', 14, 20)
+    doc.setFontSize(10)
+    doc.setTextColor(150, 150, 150)
+    doc.text(`Rapport ${pLabel} des Revenus`, 14, 28)
+    doc.text(`Généré le ${new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`, 14, 34)
+
+    // Summary box
+    doc.setFontSize(11)
+    doc.setTextColor(40, 40, 40)
+    doc.text('Résumé', 14, 48)
+    doc.setFontSize(9)
+    doc.setTextColor(80, 80, 80)
+    doc.text(`Période : ${dateRange}`, 14, 55)
+    doc.text(`Total revenus : ${totalRevenue.toLocaleString('fr-FR')} TND`, 14, 61)
+    doc.text(`Moyenne par entrée : ${avgRevenue.toLocaleString('fr-FR')} TND`, 14, 67)
+    doc.text(`Nombre d'entrées : ${entries.length}`, 14, 73)
+
+    // Statistics section
+    doc.text(`Membres actifs : ${activeMembers} / ${members.length}`, 14, 82)
+    doc.text(`Check-ins aujourd'hui : ${checkinsTodayCount}`, 14, 88)
+    doc.text(`Abonnements actifs : ${allMemberships.filter(m => m.status === 'active').length}`, 14, 94)
+
+    // Plan breakdown
+    const planBreakdown = pricing.map(p => {
+      const planMs = allMemberships.filter(m => m.plan_type === p.plan_type && m.status === 'active')
+      return [p.name, String(planMs.length), `${p.price} TND`, `${(planMs.length * p.price).toLocaleString('fr-FR')} TND`]
+    })
+    doc.setFontSize(11)
+    doc.setTextColor(40, 40, 40)
+    doc.text('Répartition par Plan', 14, 106)
+    autoTable(doc, {
+      startY: 110,
+      head: [['Plan', 'Abonnés', 'Prix unitaire', 'Revenu potentiel']],
+      body: planBreakdown,
+      theme: 'grid',
+      headStyles: { fillColor: [91, 191, 181], textColor: [0, 0, 0], fontStyle: 'bold', fontSize: 8 },
+      bodyStyles: { fontSize: 8 },
+      margin: { left: 14 },
+    })
+
+    // Revenue entries table
+    const tableY = (doc as any).lastAutoTable?.finalY || 140
+    doc.setFontSize(11)
+    doc.setTextColor(40, 40, 40)
+    doc.text('Détail des Revenus', 14, tableY + 10)
+    autoTable(doc, {
+      startY: tableY + 14,
+      head: [['Date', 'Montant', 'Note']],
+      body: entries.map(r => [
+        new Date(r.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }),
+        `${Number(r.amount).toLocaleString('fr-FR')} TND`,
+        r.note || '—',
+      ]),
+      theme: 'striped',
+      headStyles: { fillColor: [91, 191, 181], textColor: [0, 0, 0], fontStyle: 'bold', fontSize: 8 },
+      bodyStyles: { fontSize: 8 },
+      margin: { left: 14 },
+    })
+
+    // Footer
+    const pageCount = doc.getNumberOfPages()
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i)
+      doc.setFontSize(7)
+      doc.setTextColor(180, 180, 180)
+      doc.text(`CoSpace — Rapport ${pLabel} — Page ${i}/${pageCount}`, 14, doc.internal.pageSize.height - 10)
+    }
+
+    doc.save(`CoSpace_Revenus_${pLabel}_${new Date().toISOString().split('T')[0]}.pdf`)
+  }
 
   // Members with their active membership
   const getMembershipForUser = (userId: string) => allMemberships.find(m => m.user_id === userId && m.status === 'active')
@@ -332,7 +469,22 @@ export default function AdminDashboard() {
 
             {/* Revenue Chart */}
             <div className="bg-surface border border-border rounded-2xl p-4 md:p-6 mb-5">
-              <h3 className="font-display text-[1.2rem] tracking-[0.06em] mb-5">Revenus — 7 Derniers Jours</h3>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-5 gap-3">
+                <h3 className="font-display text-[1rem] md:text-[1.2rem] tracking-[0.06em]">Revenus — {periodLabel(overviewPeriod)}</h3>
+                <div className="flex gap-1.5">
+                  {(['daily', 'weekly', 'monthly'] as const).map((p) => (
+                    <button
+                      key={p}
+                      onClick={() => setOverviewPeriod(p)}
+                      className={`px-3 py-1.5 rounded-lg text-[0.68rem] font-bold cursor-pointer transition-all border ${
+                        overviewPeriod === p ? 'bg-teal/15 text-teal border-teal/30' : 'bg-surface2 text-muted border-border hover:text-white'
+                      }`}
+                    >
+                      {{ daily: '7j', weekly: '4sem', monthly: '6mois' }[p]}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <ResponsiveContainer width="100%" height={160}>
                 <AreaChart data={revenueChartData}>
                   <defs>
@@ -524,19 +676,31 @@ export default function AdminDashboard() {
         {/* Revenue Page */}
         {activePage === 'revenue' && (
           <div className="p-4 md:p-9 animate-fade-up">
-            <div className="flex items-center justify-between mb-5 md:mb-7">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-5 md:mb-7 gap-3">
               <div>
                 <h1 className="font-display text-[1.6rem] md:text-[2.4rem] tracking-[0.06em]">Revenus</h1>
                 <p className="text-[0.75rem] text-muted mt-0.5">{now.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}</p>
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                {(['daily', 'weekly', 'monthly'] as const).map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => downloadPDF(p)}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[0.72rem] font-bold cursor-pointer transition-all border bg-surface2 text-muted border-border hover:text-teal hover:border-teal/30"
+                  >
+                    <FileText size={13} />
+                    PDF {{ daily: 'Journalier', weekly: 'Hebdo', monthly: 'Mensuel' }[p]}
+                  </button>
+                ))}
               </div>
             </div>
 
             {/* KPIs */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4 mb-6">
               {[
-                { label: 'Ce mois', value: `${thisMonthRevenue.toLocaleString('fr-FR')} TND`, delta: revenueDelta !== 0 ? `${revenueDelta > 0 ? '↑' : '↓'} ${revenueDelta}%` : '—', color: 'teal' },
-                { label: 'Mois précédent', value: `${lastMonthRevenue.toLocaleString('fr-FR')} TND`, delta: '', color: 'lime' },
-                { label: 'Entrées loggées', value: String(dailyRevenue.filter(r => { const d = new Date(r.date); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() }).length), delta: 'Ce mois', color: 'yellow-bright' },
+                { label: 'Période sélectionnée', value: `${getRevenueForPeriod(revPagePeriod).toLocaleString('fr-FR')} TND`, delta: periodLabel(revPagePeriod), color: 'teal' },
+                { label: 'Ce mois', value: `${thisMonthRevenue.toLocaleString('fr-FR')} TND`, delta: revenueDelta !== 0 ? `${revenueDelta > 0 ? '↑' : '↓'} ${revenueDelta}% vs mois précédent` : '—', color: 'lime' },
+                { label: 'Entrées loggées', value: String(getRevenueEntries(revPagePeriod).length), delta: periodLabel(revPagePeriod), color: 'yellow-bright' },
               ].map((kpi, i) => (
                 <div key={i} className="bg-surface border border-border rounded-2xl p-5">
                   <div className="text-[0.62rem] tracking-[0.12em] uppercase text-muted mb-1.5">{kpi.label}</div>
@@ -566,11 +730,26 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-            {/* Bar Chart */}
+            {/* Bar Chart with period toggle */}
             <div className="bg-surface border border-border rounded-2xl p-4 md:p-6 mb-5">
-              <h3 className="font-display text-[1rem] md:text-[1.2rem] tracking-[0.06em] mb-5">Revenus — 7 Derniers Jours</h3>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-5 gap-3">
+                <h3 className="font-display text-[1rem] md:text-[1.2rem] tracking-[0.06em]">Revenus — {periodLabel(revPagePeriod)}</h3>
+                <div className="flex gap-1.5">
+                  {(['daily', 'weekly', 'monthly'] as const).map((p) => (
+                    <button
+                      key={p}
+                      onClick={() => setRevPagePeriod(p)}
+                      className={`px-3 py-1.5 rounded-lg text-[0.68rem] font-bold cursor-pointer transition-all border ${
+                        revPagePeriod === p ? 'bg-teal/15 text-teal border-teal/30' : 'bg-surface2 text-muted border-border hover:text-white'
+                      }`}
+                    >
+                      {{ daily: '7j', weekly: '4sem', monthly: '6mois' }[p]}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <ResponsiveContainer width="100%" height={140}>
-                <BarChart data={revenueChartData}>
+                <BarChart data={revPageChartData}>
                   <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: 'rgba(255,255,255,0.3)', fontSize: 10 }} />
                   <Tooltip contentStyle={{ background: '#141414', border: '1px solid rgba(91,191,181,0.2)', borderRadius: 8 }} labelStyle={{ color: '#f2ede8' }} />
                   <Bar dataKey="value" fill="#5bbfb5" radius={[6, 6, 0, 0]} />
@@ -580,7 +759,10 @@ export default function AdminDashboard() {
 
             {/* Revenue Log Table */}
             <div className="bg-surface border border-border rounded-2xl overflow-hidden">
-              <div className="p-4 border-b border-border font-display text-[1.1rem] tracking-[0.06em]">Historique des Revenus</div>
+              <div className="p-4 border-b border-border flex items-center justify-between">
+                <span className="font-display text-[1rem] md:text-[1.1rem] tracking-[0.06em]">Historique — {periodLabel(revPagePeriod)}</span>
+                <span className="text-[0.68rem] text-muted">{getRevenueEntries(revPagePeriod).length} entrées</span>
+              </div>
               <table className="w-full">
                 <thead>
                   <tr className="text-left text-[0.62rem] font-bold tracking-[0.12em] uppercase text-muted border-b border-border">
@@ -590,15 +772,15 @@ export default function AdminDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {dailyRevenue.slice(0, 20).map((r) => (
+                  {getRevenueEntries(revPagePeriod).map((r) => (
                     <tr key={r.id} className="border-b border-teal/5 last:border-none hover:bg-white/[0.02]">
                       <td className="p-3.5 text-[0.82rem]">{formatDate(r.date)}</td>
                       <td className="p-3.5 text-[0.82rem] text-teal font-bold">{Number(r.amount).toLocaleString('fr-FR')} TND</td>
                       <td className="p-3.5 text-[0.82rem] text-muted">{r.note || '—'}</td>
                     </tr>
                   ))}
-                  {dailyRevenue.length === 0 && (
-                    <tr><td colSpan={3} className="p-8 text-center text-muted text-[0.85rem]">Aucun revenu enregistré</td></tr>
+                  {getRevenueEntries(revPagePeriod).length === 0 && (
+                    <tr><td colSpan={3} className="p-8 text-center text-muted text-[0.85rem]">Aucun revenu pour cette période</td></tr>
                   )}
                 </tbody>
               </table>
