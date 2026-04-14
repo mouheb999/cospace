@@ -63,6 +63,10 @@ export default function ClientDashboard() {
   const [showNotifSettings, setShowNotifSettings] = useState(false)
   const [unreadMessages, setUnreadMessages] = useState(0)
   const [showSubDetails, setShowSubDetails] = useState(false)
+  const [requireNameChange, setRequireNameChange] = useState(false)
+  const [nameChangeFirst, setNameChangeFirst] = useState('')
+  const [nameChangeLast, setNameChangeLast] = useState('')
+  const [nameChangeSaving, setNameChangeSaving] = useState(false)
   const [chatActive, setChatActive] = useState(false)
   const [showPayModal, setShowPayModal] = useState(false)
   const [payMembership, setPayMembership] = useState('')
@@ -82,10 +86,8 @@ export default function ClientDashboard() {
   // Combined loading state
   const isLoading = authLoading || profileLoading || streakLoading || leaderboardLoading
 
-  // Fetch additional data on mount
-  useEffect(() => {
+  const fetchDashboardData = async () => {
     if (!user) return
-
     const fetchData = async () => {
       try {
         // Fetch memberships
@@ -169,6 +171,12 @@ export default function ClientDashboard() {
     }
 
     fetchData()
+  }
+
+  // Fetch additional data on mount
+  useEffect(() => {
+    if (!user) return
+    fetchDashboardData()
   }, [user])
 
   // Init status message from profile
@@ -185,6 +193,18 @@ export default function ClientDashboard() {
       setOnboardingName(profile.first_name || '')
     }
   }, [profile])
+
+  // Force name change if user has default name
+  useEffect(() => {
+    if (profile && !showOnboarding) {
+      const fn = (profile.first_name || '').trim().toLowerCase()
+      if (fn === 'user' || fn === '' || fn === 'user.') {
+        setRequireNameChange(true)
+        setNameChangeFirst('')
+        setNameChangeLast('')
+      }
+    }
+  }, [profile, showOnboarding])
 
   const handleOnboardingAvatar = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -673,26 +693,6 @@ export default function ClientDashboard() {
               </div>
             </Card>
 
-            {/* Membership Card */}
-            <Card variant="membership" className="mb-4">
-              <div className="flex justify-between items-center mb-2">
-                <div className="font-display text-[1.4rem] tracking-[0.08em] text-teal">
-                  Abonnement {activeMembership?.plan_type || 'Aucun'}
-                </div>
-                <Badge variant="teal">Actif</Badge>
-              </div>
-              <div className="text-[0.72rem] text-muted mb-3.5">
-                Expire le {activeMembership ? formatDate(activeMembership.end_date) : '-'} · {daysRemaining} jours restants
-              </div>
-              <div className="bg-white/[0.06] rounded-full h-1.5 overflow-hidden">
-                <div className="h-full bg-gradient-to-r from-teal to-lime rounded-full transition-all duration-1000" style={{ width: `${membershipProgress}%` }} />
-              </div>
-              <div className="flex justify-between text-[0.65rem] text-muted mt-1.5">
-                <span>Début {activeMembership ? formatDate(activeMembership.start_date) : '-'}</span>
-                <span>{daysRemaining}j restants</span>
-              </div>
-            </Card>
-
             {/* Check-in CTA */}
             {todayCheckin ? (
               <div className="w-full bg-success/10 border border-success/30 rounded-[18px] p-5 flex items-center gap-4 mb-5">
@@ -802,31 +802,39 @@ export default function ClientDashboard() {
             )}
 
             {/* Announcements */}
-            <div>
-              <div className="text-[0.72rem] font-bold tracking-[0.12em] uppercase text-muted mb-3">
-                📢 Annonces
-              </div>
-              {announcements.length > 0 ? announcements.map((ann) => (
-                <div key={ann.id} className="bg-surface border border-border rounded-[14px] p-4 mb-2.5 relative">
-                  {ann.is_pinned && (
-                    <div className="absolute top-3 right-3">
-                      <Badge variant="teal">📌 Épinglé</Badge>
-                    </div>
-                  )}
-                  <div className="font-bold text-[0.85rem] mb-1 pr-20">{ann.title}</div>
-                  <div className="text-[0.78rem] text-muted leading-[1.5]">{ann.content}</div>
-                  <div className="text-[0.65rem] text-white/20 mt-2">{formatDate(ann.created_at)}</div>
+            {announcements.length > 0 && (
+              <div className="mt-2">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-8 h-8 rounded-full bg-yellow-bright/15 flex items-center justify-center">
+                    <Bell size={16} className="text-yellow-bright" />
+                  </div>
+                  <div className="text-[0.78rem] font-bold tracking-[0.06em] uppercase">Annonces</div>
+                  <div className="ml-auto bg-yellow-bright/15 text-yellow-bright text-[0.62rem] font-bold px-2 py-0.5 rounded-full">{announcements.length}</div>
                 </div>
-              )) : (
-                <div className="text-muted text-sm">Aucune annonce pour le moment</div>
-              )}
-            </div>
+                {announcements.map((ann) => (
+                  <div key={ann.id} className={`rounded-[16px] p-4 mb-3 relative border-l-[3px] ${
+                    ann.is_pinned
+                      ? 'bg-teal/[0.06] border-teal border border-l-teal'
+                      : 'bg-surface border border-border border-l-yellow-bright'
+                  }`}>
+                    {ann.is_pinned && (
+                      <div className="absolute top-3 right-3">
+                        <Badge variant="teal">📌 Épinglé</Badge>
+                      </div>
+                    )}
+                    <div className="font-bold text-[0.88rem] mb-1.5 pr-20">{ann.title}</div>
+                    <div className="text-[0.8rem] text-muted leading-[1.6]">{ann.content}</div>
+                    <div className="text-[0.62rem] text-white/25 mt-2">{formatDate(ann.created_at)}</div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
         {/* Check-in Tab */}
         {activeTab === 'checkin' && (
-          <CheckinTab />
+          <CheckinTab onSuccess={() => { fetchDashboardData(); refreshStreak() }} />
         )}
 
         {/* Assistance / Chat Tab */}
@@ -1410,6 +1418,61 @@ export default function ClientDashboard() {
           </button>
         ))}
       </nav>
+
+      {/* Force Name Change Modal */}
+      {requireNameChange && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[200] p-4">
+          <div className="bg-surface border border-teal/30 rounded-2xl w-full max-w-[380px] p-6 animate-fade-up">
+            <div className="text-center mb-5">
+              <div className="w-14 h-14 rounded-full bg-teal/15 flex items-center justify-center mx-auto mb-3">
+                <Edit3 size={24} className="text-teal" />
+              </div>
+              <h2 className="font-display text-[1.3rem] tracking-[0.04em] mb-1">Complétez votre profil</h2>
+              <p className="text-[0.78rem] text-muted">Veuillez entrer votre vrai nom pour continuer.</p>
+            </div>
+            <div className="flex flex-col gap-3 mb-5">
+              <div>
+                <label className="text-[0.65rem] font-semibold uppercase tracking-[0.1em] text-muted block mb-1">Prénom</label>
+                <input
+                  type="text"
+                  value={nameChangeFirst}
+                  onChange={(e) => setNameChangeFirst(e.target.value)}
+                  placeholder="Votre prénom"
+                  className="w-full bg-surface2 border border-border rounded-xl px-4 py-3 text-[0.88rem] text-white focus:outline-none focus:border-teal/50"
+                />
+              </div>
+              <div>
+                <label className="text-[0.65rem] font-semibold uppercase tracking-[0.1em] text-muted block mb-1">Nom</label>
+                <input
+                  type="text"
+                  value={nameChangeLast}
+                  onChange={(e) => setNameChangeLast(e.target.value)}
+                  placeholder="Votre nom de famille"
+                  className="w-full bg-surface2 border border-border rounded-xl px-4 py-3 text-[0.88rem] text-white focus:outline-none focus:border-teal/50"
+                />
+              </div>
+            </div>
+            <Button
+              variant="teal"
+              fullWidth
+              disabled={!nameChangeFirst.trim() || !nameChangeLast.trim() || nameChangeFirst.trim().toLowerCase() === 'user' || nameChangeSaving}
+              onClick={async () => {
+                setNameChangeSaving(true)
+                try {
+                  await updateProfile({ first_name: nameChangeFirst.trim(), last_name: nameChangeLast.trim() })
+                  setRequireNameChange(false)
+                } catch (err) {
+                  console.error('Name change error:', err)
+                } finally {
+                  setNameChangeSaving(false)
+                }
+              }}
+            >
+              {nameChangeSaving ? <Loader2 size={16} className="animate-spin" /> : 'Confirmer'}
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

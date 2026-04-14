@@ -15,7 +15,11 @@ interface LocationData {
   accuracy: number
 }
 
-export function CheckinTab() {
+interface CheckinTabProps {
+  onSuccess?: () => void
+}
+
+export function CheckinTab({ onSuccess }: CheckinTabProps) {
   const router = useRouter()
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -153,8 +157,8 @@ export function CheckinTab() {
     if (result.success) {
       setStreak(result.streak)
       setStep('success')
-      // Refresh the page to update dashboard data
       router.refresh()
+      onSuccess?.()
     } else {
       setErrorMsg(result.error)
       setStep('error')
