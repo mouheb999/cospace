@@ -84,6 +84,10 @@ export function CheckinTab() {
     canvas.height = video.videoHeight * scale
 
     const ctx = canvas.getContext('2d')
+    if (facingMode === 'user' && ctx) {
+      ctx.translate(canvas.width, 0)
+      ctx.scale(-1, 1)
+    }
     ctx?.drawImage(video, 0, 0, canvas.width, canvas.height)
 
     const dataUrl = canvas.toDataURL('image/jpeg', 0.85)
@@ -91,7 +95,7 @@ export function CheckinTab() {
 
     streamRef.current?.getTracks().forEach(t => t.stop())
     setStep('preview')
-  }, [])
+  }, [facingMode])
 
   // ── File upload fallback ──────────────────────────────────────────────────
   const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -220,7 +224,7 @@ export function CheckinTab() {
                   autoPlay
                   playsInline
                   muted
-                  className="w-full h-full object-cover"
+                  className={`w-full h-full object-cover ${facingMode === 'user' ? 'scale-x-[-1]' : ''}`}
                 />
                 <div className="absolute inset-0 border-4 border-teal/20 rounded-[18px] pointer-events-none" />
               </div>
