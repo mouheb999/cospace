@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation'
 import { Button, Input, Badge, Avatar } from '@/components/ui'
 import {
   LayoutGrid, Users, DollarSign, TrendingUp, Tag, Bell, Settings,
-  AlertTriangle, ChevronRight, Download, Plus, Search, LogOut, X, Loader2, Menu, FileText, Trash2
+  AlertTriangle, ChevronRight, Download, Plus, Search, LogOut, X, Loader2, Menu, FileText, Trash2,
+  CreditCard, CheckCircle, XCircle, Clock
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth/context'
 import { createClient } from '@/lib/supabase/client'
@@ -15,7 +16,9 @@ import {
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 
-type AdminPage = 'overview' | 'members' | 'revenue' | 'leaderboard' | 'pricing' | 'announce' | 'settings'
+type AdminPage = 'overview' | 'members' | 'revenue' | 'requests' | 'leaderboard' | 'pricing' | 'announce' | 'settings'
+
+interface PaymentRequest { id: string; name: string; membership: string; source: 'user' | 'public'; status: 'pending' | 'approved' | 'rejected'; user_id: string | null; handled_by: string | null; handled_at: string | null; created_at: string }
 
 interface Member { id: string; email: string; first_name: string; last_name: string; avatar_url: string | null; current_streak: number; longest_streak: number; created_at: string; role: string }
 interface Membership { id: string; user_id: string; plan_type: string; price_paid: number; start_date: string; end_date: string; status: string }
@@ -45,6 +48,8 @@ export default function AdminDashboard() {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
   const [checkinsTodayCount, setCheckinsTodayCount] = useState(0)
   const [rewardText, setRewardText] = useState('')
+  const [paymentRequests, setPaymentRequests] = useState<PaymentRequest[]>([])
+  const [processingReq, setProcessingReq] = useState<string | null>(null)
 
   // UI states
   const [searchQuery, setSearchQuery] = useState('')
@@ -82,7 +87,7 @@ export default function AdminDashboard() {
     setLoading(true)
     const today = new Date().toISOString().split('T')[0]
 
-    const [membersRes, membershipsRes, pricingRes, annRes, revRes, auditRes, checkinsRes, lbRes, lsRes] = await Promise.all([
+    const [membersRes, membershipsRes, pricingRes, annRes, revRes, auditRes, checkinsRes, lbRes, lsRes, payReqRes] = await Promise.all([
       supabase.from('profiles').select('*').eq('role', 'client').order('created_at', { ascending: false }),
       supabase.from('memberships').select('*').order('created_at', { ascending: false }),
       supabase.from('pricing').select('*').order('price', { ascending: true }),
@@ -92,6 +97,7 @@ export default function AdminDashboard() {
       supabase.from('checkins').select('id', { count: 'exact', head: true }).gte('checked_in_at', today + 'T00:00:00').lte('checked_in_at', today + 'T23:59:59'),
       supabase.rpc('get_leaderboard' as never, { limit_count: 10 } as never),
       supabase.from('leaderboard_settings').select('*').limit(1),
+      supabase.from('payment_requests').select('*').order('created_at', { ascending: false }),
     ])
 
     if (membersRes.data) setMembers(membersRes.data as Member[])
@@ -103,6 +109,7 @@ export default function AdminDashboard() {
     setCheckinsTodayCount(checkinsRes.count || 0)
     if ((lbRes as any).data) setLeaderboard((lbRes as any).data as LeaderboardEntry[])
     if (lsRes.data && lsRes.data.length > 0) setRewardText((lsRes.data[0] as any).reward_text || '')
+    if (payReqRes.data) setPaymentRequests(payReqRes.data as PaymentRequest[])
 
     setLoading(false)
   }, [user])
@@ -368,6 +375,28 @@ export default function AdminDashboard() {
     }
   }
 
+  const handleApproveRequest = async (req: PaymentRequest) => {
+    setProcessingReq(req.id)
+    await supabase.from('payment_requests').update({ status: 'approved', handled_by: user!.id, handled_at: new Date().toISOString() } as never).eq('id', req.id)
+    if (req.user_id) {
+      const plan = pricing.find(p => p.plan_type === req.membership)
+      if (plan) {
+        const startDate = new Date().toISOString().split('T')[0]
+        const endDate = new Date(Date.now() + plan.duration_days * 86400000).toISOString().split('T')[0]
+        await supabase.from('memberships').insert({ user_id: req.user_id, plan_type: req.membership, price_paid: plan.price, start_date: startDate, end_date: endDate, status: 'active' } as never)
+      }
+    }
+    setProcessingReq(null)
+    fetchData()
+  }
+
+  const handleRejectRequest = async (reqId: string) => {
+    setProcessingReq(reqId)
+    await supabase.from('payment_requests').update({ status: 'rejected', handled_by: user!.id, handled_at: new Date().toISOString() } as never).eq('id', reqId)
+    setProcessingReq(null)
+    fetchData()
+  }
+
   const formatDate = (d: string) => new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })
   const formatShortDate = (d: string) => new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
   const planLabel = (t: string) => ({ daily: 'Journalier', weekly: 'Hebdomadaire', biweekly: '2 Semaines', monthly: 'Mensuel', quarterly: 'Trimestriel' }[t] || t)
@@ -376,6 +405,7 @@ export default function AdminDashboard() {
     { id: 'overview' as const, label: 'Vue Globale', icon: LayoutGrid },
     { id: 'members' as const, label: 'Membres', icon: Users, badge: String(members.length) },
     { id: 'revenue' as const, label: 'Revenus', icon: DollarSign },
+    { id: 'requests' as const, label: 'Demandes', icon: CreditCard, badge: String(paymentRequests.filter(r => r.status === 'pending').length) },
     { id: 'leaderboard' as const, label: 'Classement', icon: TrendingUp },
     { id: 'pricing' as const, label: 'Tarifs', icon: Tag },
     { id: 'announce' as const, label: 'Annonces', icon: Bell, badgeDanger: String(announcements.length) },
@@ -416,11 +446,11 @@ export default function AdminDashboard() {
       </div>
       <nav className="flex-1 py-3 overflow-y-auto">
         <div className="px-5 py-3.5 text-[0.58rem] font-bold tracking-[0.18em] uppercase text-white/20">Dashboard</div>
-        {navItems.slice(0, 3).map(navButton)}
+        {navItems.slice(0, 4).map(navButton)}
         <div className="px-5 py-3.5 text-[0.58rem] font-bold tracking-[0.18em] uppercase text-white/20 mt-2">Contenu</div>
-        {navItems.slice(3, 6).map(navButton)}
+        {navItems.slice(4, 7).map(navButton)}
         <div className="px-5 py-3.5 text-[0.58rem] font-bold tracking-[0.18em] uppercase text-white/20 mt-2">Système</div>
-        {navItems.slice(6).map(navButton)}
+        {navItems.slice(7).map(navButton)}
       </nav>
       <div className="p-5 border-t border-border">
         <Button variant="danger" fullWidth size="sm" onClick={signOut}><LogOut size={14} /> Déconnexion</Button>
@@ -842,6 +872,147 @@ export default function AdminDashboard() {
                 </tbody>
               </table>
             </div>
+          </div>
+        )}
+
+        {/* Payment Requests Page */}
+        {activePage === 'requests' && (
+          <div className="p-4 md:p-9 animate-fade-up">
+            <div className="flex flex-col md:flex-row md:items-center justify-between mb-5 md:mb-7 gap-3">
+              <div>
+                <h1 className="font-display text-[1.6rem] md:text-[2.4rem] tracking-[0.06em]">Demandes de paiement</h1>
+                <p className="text-[0.75rem] text-muted mt-0.5">{paymentRequests.filter(r => r.status === 'pending').length} en attente · {paymentRequests.length} total</p>
+              </div>
+            </div>
+
+            {/* Pending Section */}
+            {(() => {
+              const pending = paymentRequests.filter(r => r.status === 'pending')
+              const todayStr = new Date().toISOString().split('T')[0]
+              const approvedToday = paymentRequests.filter(r => r.status === 'approved' && r.created_at.startsWith(todayStr))
+              const rejectedToday = paymentRequests.filter(r => r.status === 'rejected' && r.created_at.startsWith(todayStr))
+              return (
+                <>
+                  {/* Pending */}
+                  <div className="mb-8">
+                    <div className="flex items-center gap-2 mb-4">
+                      <Clock size={16} className="text-yellow-bright" />
+                      <span className="font-display text-[1rem] md:text-[1.2rem] tracking-[0.06em] text-yellow-bright">En attente ({pending.length})</span>
+                    </div>
+                    {pending.length === 0 ? (
+                      <div className="bg-surface border border-border rounded-2xl p-8 text-center">
+                        <CheckCircle size={32} className="text-teal/30 mx-auto mb-2" />
+                        <div className="text-muted">Aucune demande en attente</div>
+                      </div>
+                    ) : (
+                      <div className="bg-surface border border-border rounded-2xl overflow-hidden">
+                        <table className="w-full">
+                          <thead>
+                            <tr className="border-b border-border text-[0.62rem] tracking-[0.1em] uppercase text-muted">
+                              <th className="text-left p-4">Nom</th>
+                              <th className="text-left p-4">Formule</th>
+                              <th className="text-left p-4">Source</th>
+                              <th className="text-left p-4">Date</th>
+                              <th className="text-right p-4">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {pending.map((req) => (
+                              <tr key={req.id} className="border-b border-border last:border-none hover:bg-white/[0.02] transition-colors">
+                                <td className="p-4 font-bold text-[0.85rem]">{req.name}</td>
+                                <td className="p-4 text-[0.82rem] capitalize">{planLabel(req.membership)}</td>
+                                <td className="p-4"><Badge variant={req.source === 'user' ? 'teal' : 'lime'}>{req.source === 'user' ? 'Membre' : 'Public'}</Badge></td>
+                                <td className="p-4 text-[0.78rem] text-muted">{formatDate(req.created_at)}<br/><span className="text-[0.65rem]">{new Date(req.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span></td>
+                                <td className="p-4 text-right">
+                                  <div className="flex gap-2 justify-end">
+                                    <Button variant="teal" size="sm" onClick={() => handleApproveRequest(req)} disabled={processingReq === req.id}>
+                                      <CheckCircle size={13} /> Approuver
+                                    </Button>
+                                    <Button variant="danger" size="sm" onClick={() => handleRejectRequest(req.id)} disabled={processingReq === req.id}>
+                                      <XCircle size={13} /> Rejeter
+                                    </Button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Approved Today */}
+                  <div className="mb-8">
+                    <div className="flex items-center gap-2 mb-4">
+                      <CheckCircle size={16} className="text-teal" />
+                      <span className="font-display text-[1rem] md:text-[1.2rem] tracking-[0.06em] text-teal">Approuv&eacute;es aujourd&apos;hui ({approvedToday.length})</span>
+                    </div>
+                    {approvedToday.length === 0 ? (
+                      <div className="bg-surface border border-border rounded-2xl p-6 text-center text-muted text-[0.82rem]">Aucune approbation aujourd&apos;hui</div>
+                    ) : (
+                      <div className="bg-surface border border-border rounded-2xl overflow-hidden">
+                        <table className="w-full">
+                          <thead>
+                            <tr className="border-b border-border text-[0.62rem] tracking-[0.1em] uppercase text-muted">
+                              <th className="text-left p-4">Nom</th>
+                              <th className="text-left p-4">Formule</th>
+                              <th className="text-left p-4">Source</th>
+                              <th className="text-left p-4">Heure</th>
+                              <th className="text-right p-4">Statut</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {approvedToday.map((req) => (
+                              <tr key={req.id} className="border-b border-border last:border-none">
+                                <td className="p-4 font-bold text-[0.85rem]">{req.name}</td>
+                                <td className="p-4 text-[0.82rem] capitalize">{planLabel(req.membership)}</td>
+                                <td className="p-4"><Badge variant={req.source === 'user' ? 'teal' : 'lime'}>{req.source === 'user' ? 'Membre' : 'Public'}</Badge></td>
+                                <td className="p-4 text-[0.78rem] text-muted">{new Date(req.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</td>
+                                <td className="p-4 text-right"><span className="text-teal font-bold text-[0.78rem]">✅ Approuvé</span></td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Rejected Today */}
+                  {rejectedToday.length > 0 && (
+                    <div className="mb-8">
+                      <div className="flex items-center gap-2 mb-4">
+                        <XCircle size={16} className="text-danger" />
+                        <span className="font-display text-[1rem] md:text-[1.2rem] tracking-[0.06em] text-danger">Rejet&eacute;es aujourd&apos;hui ({rejectedToday.length})</span>
+                      </div>
+                      <div className="bg-surface border border-border rounded-2xl overflow-hidden">
+                        <table className="w-full">
+                          <thead>
+                            <tr className="border-b border-border text-[0.62rem] tracking-[0.1em] uppercase text-muted">
+                              <th className="text-left p-4">Nom</th>
+                              <th className="text-left p-4">Formule</th>
+                              <th className="text-left p-4">Source</th>
+                              <th className="text-left p-4">Heure</th>
+                              <th className="text-right p-4">Statut</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {rejectedToday.map((req) => (
+                              <tr key={req.id} className="border-b border-border last:border-none opacity-60">
+                                <td className="p-4 font-bold text-[0.85rem]">{req.name}</td>
+                                <td className="p-4 text-[0.82rem] capitalize">{planLabel(req.membership)}</td>
+                                <td className="p-4"><Badge variant={req.source === 'user' ? 'teal' : 'lime'}>{req.source === 'user' ? 'Membre' : 'Public'}</Badge></td>
+                                <td className="p-4 text-[0.78rem] text-muted">{new Date(req.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</td>
+                                <td className="p-4 text-right"><span className="text-danger font-bold text-[0.78rem]">❌ Rejeté</span></td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )
+            })()}
           </div>
         )}
 

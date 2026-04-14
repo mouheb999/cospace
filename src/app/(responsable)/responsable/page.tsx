@@ -527,76 +527,129 @@ export default function ResponsableDashboard() {
                   )}
                 </div>
 
-                {paymentRequests.length === 0 ? (
-                  <div className="text-center py-12">
-                    <CreditCard size={40} className="text-muted/30 mx-auto mb-3" />
-                    <div className="text-muted text-sm">Aucune demande</div>
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-2.5">
-                    {paymentRequests.map((req) => (
-                      <div
-                        key={req.id}
-                        className={`bg-surface border rounded-[16px] p-4 ${
-                          req.status === 'pending' ? 'border-yellow-bright/30' :
-                          req.status === 'approved' ? 'border-teal/20' : 'border-danger/20'
-                        }`}
-                      >
-                        <div className="flex items-start justify-between mb-2">
-                          <div className="flex items-center gap-2.5">
-                            <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${
-                              req.status === 'pending' ? 'bg-yellow-bright/15' :
-                              req.status === 'approved' ? 'bg-teal/15' : 'bg-danger/15'
-                            }`}>
-                              {req.status === 'pending' ? <Clock size={16} className="text-yellow-bright" /> :
-                               req.status === 'approved' ? <CheckCircle size={16} className="text-teal" /> :
-                               <XCircle size={16} className="text-danger" />}
-                            </div>
-                            <div>
-                              <div className="font-bold text-[0.88rem]">{req.name}</div>
-                              <div className="flex items-center gap-2 mt-0.5">
-                                <Badge variant={req.source === 'user' ? 'teal' : 'lime'}>{req.source === 'user' ? 'Membre' : 'Public'}</Badge>
-                                <span className="text-[0.65rem] text-muted capitalize">{req.membership}</span>
-                              </div>
-                            </div>
-                          </div>
-                          <div className="text-[0.62rem] text-muted text-right">
-                            {new Date(req.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
-                            <br />
-                            {new Date(req.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-                          </div>
+                {/* Pending Requests Section */}
+                {(() => {
+                  const pending = paymentRequests.filter(r => r.status === 'pending')
+                  const todayStr = new Date().toISOString().split('T')[0]
+                  const approvedToday = paymentRequests.filter(r => r.status === 'approved' && r.created_at.startsWith(todayStr))
+                  const rejectedToday = paymentRequests.filter(r => r.status === 'rejected' && r.created_at.startsWith(todayStr))
+                  return (
+                    <>
+                      {/* Pending */}
+                      <div className="mb-6">
+                        <div className="flex items-center gap-2 mb-3">
+                          <Clock size={14} className="text-yellow-bright" />
+                          <span className="text-[0.72rem] font-bold tracking-[0.1em] uppercase text-yellow-bright">En attente ({pending.length})</span>
                         </div>
-
-                        {req.status === 'pending' && (
-                          <div className="flex gap-2 mt-3">
-                            <button
-                              onClick={() => handleApproveRequest(req)}
-                              disabled={processingReq === req.id}
-                              className="flex-1 flex items-center justify-center gap-1.5 bg-teal text-black font-bold py-2.5 rounded-xl text-[0.82rem] border-none cursor-pointer hover:brightness-110 disabled:opacity-50 transition-all"
-                            >
-                              <CheckCircle size={14} />
-                              Approuver
-                            </button>
-                            <button
-                              onClick={() => handleRejectRequest(req.id)}
-                              disabled={processingReq === req.id}
-                              className="flex-1 flex items-center justify-center gap-1.5 bg-surface2 border border-danger/30 text-danger font-bold py-2.5 rounded-xl text-[0.82rem] cursor-pointer hover:bg-danger/10 disabled:opacity-50 transition-all"
-                            >
-                              <XCircle size={14} />
-                              Rejeter
-                            </button>
+                        {pending.length === 0 ? (
+                          <div className="text-center py-8 bg-surface border border-border rounded-[16px]">
+                            <CheckCircle size={28} className="text-teal/30 mx-auto mb-2" />
+                            <div className="text-muted text-[0.82rem]">Aucune demande en attente</div>
                           </div>
-                        )}
-
-                        {req.status !== 'pending' && (
-                          <div className={`text-[0.72rem] mt-2 font-medium ${req.status === 'approved' ? 'text-teal' : 'text-danger'}`}>
-                            {req.status === 'approved' ? '✅ Approuvé' : '❌ Rejeté'}
+                        ) : (
+                          <div className="flex flex-col gap-2.5">
+                            {pending.map((req) => (
+                              <div key={req.id} className="bg-surface border border-yellow-bright/30 rounded-[16px] p-4">
+                                <div className="flex items-start justify-between mb-2">
+                                  <div className="flex items-center gap-2.5">
+                                    <div className="w-9 h-9 rounded-full bg-yellow-bright/15 flex items-center justify-center flex-shrink-0">
+                                      <Clock size={16} className="text-yellow-bright" />
+                                    </div>
+                                    <div>
+                                      <div className="font-bold text-[0.88rem]">{req.name}</div>
+                                      <div className="flex items-center gap-2 mt-0.5">
+                                        <Badge variant={req.source === 'user' ? 'teal' : 'lime'}>{req.source === 'user' ? 'Membre' : 'Public'}</Badge>
+                                        <span className="text-[0.65rem] text-muted capitalize">{req.membership}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <div className="text-[0.62rem] text-muted text-right">
+                                    {new Date(req.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
+                                    <br />
+                                    {new Date(req.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                                  </div>
+                                </div>
+                                <div className="flex gap-2 mt-3">
+                                  <button
+                                    onClick={() => handleApproveRequest(req)}
+                                    disabled={processingReq === req.id}
+                                    className="flex-1 flex items-center justify-center gap-1.5 bg-teal text-black font-bold py-2.5 rounded-xl text-[0.82rem] border-none cursor-pointer hover:brightness-110 disabled:opacity-50 transition-all"
+                                  >
+                                    <CheckCircle size={14} />
+                                    Approuver
+                                  </button>
+                                  <button
+                                    onClick={() => handleRejectRequest(req.id)}
+                                    disabled={processingReq === req.id}
+                                    className="flex-1 flex items-center justify-center gap-1.5 bg-surface2 border border-danger/30 text-danger font-bold py-2.5 rounded-xl text-[0.82rem] cursor-pointer hover:bg-danger/10 disabled:opacity-50 transition-all"
+                                  >
+                                    <XCircle size={14} />
+                                    Rejeter
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
                           </div>
                         )}
                       </div>
-                    ))}
-                  </div>
-                )}
+
+                      {/* Approved Today */}
+                      {approvedToday.length > 0 && (
+                        <div className="mb-6">
+                          <div className="flex items-center gap-2 mb-3">
+                            <CheckCircle size={14} className="text-teal" />
+                            <span className="text-[0.72rem] font-bold tracking-[0.1em] uppercase text-teal">Approuvées aujourd&apos;hui ({approvedToday.length})</span>
+                          </div>
+                          <div className="flex flex-col gap-2">
+                            {approvedToday.map((req) => (
+                              <div key={req.id} className="bg-surface border border-teal/20 rounded-[16px] p-3.5 flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-full bg-teal/15 flex items-center justify-center flex-shrink-0">
+                                  <CheckCircle size={14} className="text-teal" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="font-bold text-[0.82rem]">{req.name}</div>
+                                  <div className="flex items-center gap-2">
+                                    <Badge variant={req.source === 'user' ? 'teal' : 'lime'}>{req.source === 'user' ? 'Membre' : 'Public'}</Badge>
+                                    <span className="text-[0.62rem] text-muted capitalize">{req.membership}</span>
+                                  </div>
+                                </div>
+                                <div className="text-[0.62rem] text-teal font-medium">
+                                  {new Date(req.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Rejected Today */}
+                      {rejectedToday.length > 0 && (
+                        <div className="mb-6">
+                          <div className="flex items-center gap-2 mb-3">
+                            <XCircle size={14} className="text-danger" />
+                            <span className="text-[0.72rem] font-bold tracking-[0.1em] uppercase text-danger">Rejetées aujourd&apos;hui ({rejectedToday.length})</span>
+                          </div>
+                          <div className="flex flex-col gap-2">
+                            {rejectedToday.map((req) => (
+                              <div key={req.id} className="bg-surface border border-danger/20 rounded-[16px] p-3.5 flex items-center gap-3 opacity-60">
+                                <div className="w-8 h-8 rounded-full bg-danger/15 flex items-center justify-center flex-shrink-0">
+                                  <XCircle size={14} className="text-danger" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="font-bold text-[0.82rem]">{req.name}</div>
+                                  <span className="text-[0.62rem] text-muted capitalize">{req.membership}</span>
+                                </div>
+                                <div className="text-[0.62rem] text-danger font-medium">
+                                  {new Date(req.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )
+                })()}
               </div>
             )}
 
