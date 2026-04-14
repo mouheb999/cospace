@@ -179,91 +179,6 @@ export default function AdminDashboard() {
     return dailyRevenue.filter(r => new Date(r.date) >= cutoff)
   }
 
-  // PDF Generation
-  const downloadPDF = (period: 'daily' | 'weekly' | 'monthly') => {
-    const doc = new jsPDF()
-    const pLabel = { daily: 'Journalier', weekly: 'Hebdomadaire', monthly: 'Mensuel' }[period]
-    const entries = getRevenueEntries(period)
-    const totalRevenue = entries.reduce((s, r) => s + Number(r.amount), 0)
-    const avgRevenue = entries.length > 0 ? Math.round(totalRevenue / entries.length) : 0
-    const dateRange = entries.length > 0
-      ? `${formatDate(entries[entries.length - 1].date)} — ${formatDate(entries[0].date)}`
-      : '—'
-
-    // Header
-    doc.setFontSize(22)
-    doc.setTextColor(91, 191, 181)
-    doc.text('CoSpace', 14, 20)
-    doc.setFontSize(10)
-    doc.setTextColor(150, 150, 150)
-    doc.text(`Rapport ${pLabel} des Revenus`, 14, 28)
-    doc.text(`Généré le ${new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`, 14, 34)
-
-    // Summary box
-    doc.setFontSize(11)
-    doc.setTextColor(40, 40, 40)
-    doc.text('Résumé', 14, 48)
-    doc.setFontSize(9)
-    doc.setTextColor(80, 80, 80)
-    doc.text(`Période : ${dateRange}`, 14, 55)
-    doc.text(`Total revenus : ${totalRevenue.toLocaleString('fr-FR')} TND`, 14, 61)
-    doc.text(`Moyenne par entrée : ${avgRevenue.toLocaleString('fr-FR')} TND`, 14, 67)
-    doc.text(`Nombre d'entrées : ${entries.length}`, 14, 73)
-
-    // Statistics section
-    doc.text(`Membres actifs : ${activeMembers} / ${members.length}`, 14, 82)
-    doc.text(`Check-ins aujourd'hui : ${checkinsTodayCount}`, 14, 88)
-    doc.text(`Abonnements actifs : ${allMemberships.filter(m => m.status === 'active').length}`, 14, 94)
-
-    // Plan breakdown
-    const planBreakdown = pricing.map(p => {
-      const planMs = allMemberships.filter(m => m.plan_type === p.plan_type && m.status === 'active')
-      return [p.name, String(planMs.length), `${p.price} TND`, `${(planMs.length * p.price).toLocaleString('fr-FR')} TND`]
-    })
-    doc.setFontSize(11)
-    doc.setTextColor(40, 40, 40)
-    doc.text('Répartition par Plan', 14, 106)
-    autoTable(doc, {
-      startY: 110,
-      head: [['Plan', 'Abonnés', 'Prix unitaire', 'Revenu potentiel']],
-      body: planBreakdown,
-      theme: 'grid',
-      headStyles: { fillColor: [91, 191, 181], textColor: [0, 0, 0], fontStyle: 'bold', fontSize: 8 },
-      bodyStyles: { fontSize: 8 },
-      margin: { left: 14 },
-    })
-
-    // Revenue entries table
-    const tableY = (doc as any).lastAutoTable?.finalY || 140
-    doc.setFontSize(11)
-    doc.setTextColor(40, 40, 40)
-    doc.text('Détail des Revenus', 14, tableY + 10)
-    autoTable(doc, {
-      startY: tableY + 14,
-      head: [['Date', 'Montant', 'Note']],
-      body: entries.map(r => [
-        new Date(r.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }),
-        `${Number(r.amount).toLocaleString('fr-FR')} TND`,
-        r.note || '—',
-      ]),
-      theme: 'striped',
-      headStyles: { fillColor: [91, 191, 181], textColor: [0, 0, 0], fontStyle: 'bold', fontSize: 8 },
-      bodyStyles: { fontSize: 8 },
-      margin: { left: 14 },
-    })
-
-    // Footer
-    const pageCount = doc.getNumberOfPages()
-    for (let i = 1; i <= pageCount; i++) {
-      doc.setPage(i)
-      doc.setFontSize(7)
-      doc.setTextColor(180, 180, 180)
-      doc.text(`CoSpace — Rapport ${pLabel} — Page ${i}/${pageCount}`, 14, doc.internal.pageSize.height - 10)
-    }
-
-    doc.save(`CoSpace_Revenus_${pLabel}_${new Date().toISOString().split('T')[0]}.pdf`)
-  }
-
   // Members with their active membership
   const getMembershipForUser = (userId: string) => allMemberships.find(m => m.user_id === userId && m.status === 'active')
   const getMemberStatus = (userId: string) => {
@@ -923,18 +838,13 @@ export default function AdminDashboard() {
                 <h1 className="font-display text-[1.6rem] md:text-[2.4rem] tracking-[0.06em]">Revenus</h1>
                 <p className="text-[0.75rem] text-muted mt-0.5">{now.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}</p>
               </div>
-              <div className="flex gap-2 flex-wrap">
-                {(['daily', 'weekly', 'monthly'] as const).map((p) => (
-                  <button
-                    key={p}
-                    onClick={() => downloadPDF(p)}
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[0.72rem] font-bold cursor-pointer transition-all border bg-surface2 text-muted border-border hover:text-teal hover:border-teal/30"
-                  >
-                    <FileText size={13} />
-                    PDF {{ daily: 'Journalier', weekly: 'Hebdo', monthly: 'Mensuel' }[p]}
-                  </button>
-                ))}
-              </div>
+              <button
+                onClick={() => { setPdfDate(new Date().toISOString().split('T')[0]); setShowPdfModal(true) }}
+                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[0.78rem] font-bold cursor-pointer transition-all border bg-surface2 text-teal border-teal/30 hover:bg-teal/10"
+              >
+                <FileText size={14} />
+                Générer PDF
+              </button>
             </div>
 
             {/* KPIs */}
