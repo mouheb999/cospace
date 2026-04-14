@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Button, Input, Badge, Avatar } from '@/components/ui'
 import {
   LayoutGrid, Users, DollarSign, TrendingUp, Tag, Bell, Settings,
-  AlertTriangle, ChevronRight, Download, Plus, Search, LogOut, X, Loader2, Menu, FileText
+  AlertTriangle, ChevronRight, Download, Plus, Search, LogOut, X, Loader2, Menu, FileText, Trash2
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth/context'
 import { createClient } from '@/lib/supabase/client'
@@ -71,6 +71,10 @@ export default function AdminDashboard() {
   const [assignPlan, setAssignPlan] = useState('')
   const [assignPrice, setAssignPrice] = useState('')
   const [assigning, setAssigning] = useState(false)
+
+  // Delete confirmation
+  const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'member' | 'announcement' | 'revenue'; id: string; label: string } | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   // Fetch all data
   const fetchData = useCallback(async () => {
@@ -303,6 +307,30 @@ export default function AdminDashboard() {
     fetchData()
   }
 
+  const deleteMember = async (id: string) => {
+    setDeleting(true)
+    // ON DELETE CASCADE handles memberships, checkins, income_logs, messages
+    await supabase.from('profiles').delete().eq('id', id)
+    setDeleteConfirm(null)
+    setDeleting(false)
+    fetchData()
+  }
+
+  const deleteRevenueEntry = async (id: string) => {
+    setDeleting(true)
+    await supabase.from('daily_revenue').delete().eq('id', id)
+    setDeleteConfirm(null)
+    setDeleting(false)
+    fetchData()
+  }
+
+  const confirmDelete = async () => {
+    if (!deleteConfirm) return
+    if (deleteConfirm.type === 'member') await deleteMember(deleteConfirm.id)
+    else if (deleteConfirm.type === 'announcement') { await deleteAnnouncement(deleteConfirm.id); setDeleteConfirm(null) }
+    else if (deleteConfirm.type === 'revenue') await deleteRevenueEntry(deleteConfirm.id)
+  }
+
   const logRevenue = async () => {
     if (!revAmount || !user) return
     await supabase.from('daily_revenue').insert({ date: revDate, amount: Number(revAmount), note: revNote || null, logged_by: user.id } as never)
@@ -513,6 +541,7 @@ export default function AdminDashboard() {
                       <th className="pb-2.5">Membre</th>
                       <th className="pb-2.5">Plan</th>
                       <th className="pb-2.5">Streak</th>
+                      <th className="pb-2.5 w-8"></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -528,6 +557,15 @@ export default function AdminDashboard() {
                           </td>
                           <td>{ms ? <Badge variant="teal">{planLabel(ms.plan_type)}</Badge> : <span className="text-muted text-[0.75rem]">—</span>}</td>
                           <td className="text-[0.82rem]">{m.current_streak > 0 ? `🔥 ${m.current_streak}` : '-'}</td>
+                          <td>
+                            <button
+                              onClick={() => setDeleteConfirm({ type: 'member', id: m.id, label: `${m.first_name} ${m.last_name}` })}
+                              className="p-1 rounded-lg text-muted hover:text-danger hover:bg-danger/10 transition-all bg-transparent border-none cursor-pointer"
+                              title="Supprimer"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </td>
                         </tr>
                       )
                     })}
@@ -621,9 +659,18 @@ export default function AdminDashboard() {
                           </Badge>
                         </td>
                         <td className="p-3.5">
-                          <Button variant="teal" size="sm" onClick={() => { setAssignUser(m); setAssignPlan(''); setAssignPrice('') }}>
-                            Abonnement
-                          </Button>
+                          <div className="flex gap-1.5">
+                            <Button variant="teal" size="sm" onClick={() => { setAssignUser(m); setAssignPlan(''); setAssignPrice('') }}>
+                              Abonnement
+                            </Button>
+                            <button
+                              onClick={() => setDeleteConfirm({ type: 'member', id: m.id, label: `${m.first_name} ${m.last_name}` })}
+                              className="p-1.5 rounded-lg text-muted hover:text-danger hover:bg-danger/10 transition-all bg-transparent border-none cursor-pointer"
+                              title="Supprimer"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     )
@@ -769,6 +816,7 @@ export default function AdminDashboard() {
                     <th className="p-3.5">Date</th>
                     <th className="p-3.5">Montant</th>
                     <th className="p-3.5">Note</th>
+                    <th className="p-3.5 w-10"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -777,10 +825,19 @@ export default function AdminDashboard() {
                       <td className="p-3.5 text-[0.82rem]">{formatDate(r.date)}</td>
                       <td className="p-3.5 text-[0.82rem] text-teal font-bold">{Number(r.amount).toLocaleString('fr-FR')} TND</td>
                       <td className="p-3.5 text-[0.82rem] text-muted">{r.note || '—'}</td>
+                      <td className="p-3.5">
+                        <button
+                          onClick={() => setDeleteConfirm({ type: 'revenue', id: r.id, label: formatDate(r.date) })}
+                          className="p-1.5 rounded-lg text-muted hover:text-danger hover:bg-danger/10 transition-all bg-transparent border-none cursor-pointer"
+                          title="Supprimer"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </td>
                     </tr>
                   ))}
                   {getRevenueEntries(revPagePeriod).length === 0 && (
-                    <tr><td colSpan={3} className="p-8 text-center text-muted text-[0.85rem]">Aucun revenu pour cette période</td></tr>
+                    <tr><td colSpan={4} className="p-8 text-center text-muted text-[0.85rem]">Aucun revenu pour cette période</td></tr>
                   )}
                 </tbody>
               </table>
@@ -966,9 +1023,15 @@ export default function AdminDashboard() {
                     <div className="text-[0.78rem] text-muted">{ann.content}</div>
                     <div className="text-[0.65rem] text-white/20 mt-2">{formatDate(ann.created_at)}</div>
                   </div>
-                  <div className="flex gap-1.5 flex-shrink-0">
+                  <div className="flex gap-1.5 flex-shrink-0 items-center">
                     {ann.is_pinned && <Badge variant="teal">📌 Épinglé</Badge>}
-                    <Button variant="danger" size="sm" onClick={() => deleteAnnouncement(ann.id)}>Supprimer</Button>
+                    <button
+                      onClick={() => setDeleteConfirm({ type: 'announcement', id: ann.id, label: ann.title })}
+                      className="p-1.5 rounded-lg text-muted hover:text-danger hover:bg-danger/10 transition-all bg-transparent border-none cursor-pointer"
+                      title="Supprimer"
+                    >
+                      <Trash2 size={14} />
+                    </button>
                   </div>
                 </div>
               </div>
@@ -1030,6 +1093,35 @@ export default function AdminDashboard() {
                     </label>
                   </div>
                 ))}
+              </div>
+            </div>
+          </div>
+        )}
+        {/* Delete Confirmation Modal */}
+        {deleteConfirm && (
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={() => !deleting && setDeleteConfirm(null)}>
+            <div className="bg-surface border border-danger/30 rounded-2xl p-6 w-[400px] max-w-[90vw]" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-full bg-danger/15 flex items-center justify-center flex-shrink-0">
+                  <Trash2 size={18} className="text-danger" />
+                </div>
+                <div>
+                  <h3 className="font-display text-[1.1rem] tracking-[0.06em]">Confirmer la suppression</h3>
+                  <p className="text-[0.72rem] text-muted mt-0.5">Cette action est irréversible</p>
+                </div>
+              </div>
+              <div className="bg-danger/[0.06] border border-danger/20 rounded-xl p-3 mb-5">
+                <p className="text-[0.82rem] text-[#ff8080]">
+                  {deleteConfirm.type === 'member' && <>Supprimer le membre <strong>{deleteConfirm.label}</strong> et toutes ses données (abonnements, check-ins, logs) ?</>}
+                  {deleteConfirm.type === 'announcement' && <>Supprimer l&apos;annonce <strong>&quot;{deleteConfirm.label}&quot;</strong> ?</>}
+                  {deleteConfirm.type === 'revenue' && <>Supprimer l&apos;entrée de revenu du <strong>{deleteConfirm.label}</strong> ?</>}
+                </p>
+              </div>
+              <div className="flex gap-2.5">
+                <Button variant="outline" fullWidth onClick={() => setDeleteConfirm(null)} disabled={deleting}>Annuler</Button>
+                <Button variant="danger" fullWidth onClick={confirmDelete} disabled={deleting}>
+                  {deleting ? <Loader2 size={16} className="animate-spin" /> : 'Supprimer définitivement'}
+                </Button>
               </div>
             </div>
           </div>

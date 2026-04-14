@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { X, Send, MessageCircle } from 'lucide-react'
+import { X, Send, MessageCircle, Trash2 } from 'lucide-react'
 import { Avatar } from '@/components/ui'
 import { useAuth } from '@/lib/auth/context'
 import { createClient } from '@/lib/supabase/client'
@@ -28,6 +28,7 @@ export function Chat({ isOpen, onClose }: ChatProps) {
   const [sending, setSending] = useState(false)
   const [responsable, setResponsable] = useState<{ id: string; first_name: string; last_name: string; avatar_url: string | null; is_online: boolean; last_seen: string | null } | null>(null)
   const [loading, setLoading] = useState(true)
+  const [deletingMsg, setDeletingMsg] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -120,6 +121,13 @@ export function Chat({ isOpen, onClose }: ChatProps) {
       setTimeout(() => inputRef.current?.focus(), 300)
     }
   }, [isOpen])
+
+  const handleDeleteMessage = async (msgId: string) => {
+    setDeletingMsg(msgId)
+    await supabase.from('messages').delete().eq('id', msgId)
+    setMessages(prev => prev.filter(m => m.id !== msgId))
+    setDeletingMsg(null)
+  }
 
   const handleSend = async () => {
     if (!newMessage.trim() || !user || !responsable || sending) return
@@ -220,7 +228,17 @@ export function Chat({ isOpen, onClose }: ChatProps) {
             {messages.map((msg) => {
               const isMine = msg.sender_id === user?.id
               return (
-                <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
+                <div key={msg.id} className={`group flex items-end gap-1.5 ${isMine ? 'justify-end' : 'justify-start'}`}>
+                  {isMine && (
+                    <button
+                      onClick={() => handleDeleteMessage(msg.id)}
+                      disabled={deletingMsg === msg.id}
+                      className="opacity-0 group-hover:opacity-100 p-1 rounded-full hover:bg-danger/15 text-muted hover:text-danger transition-all bg-transparent border-none cursor-pointer flex-shrink-0 mb-1"
+                      title="Supprimer"
+                    >
+                      <Trash2 size={11} />
+                    </button>
+                  )}
                   <div className={`max-w-[80%] rounded-2xl px-3.5 py-2.5 ${
                     isMine
                       ? 'bg-teal text-black rounded-br-md'
@@ -234,6 +252,16 @@ export function Chat({ isOpen, onClose }: ChatProps) {
                       {isMine && msg.is_read && ' · Lu'}
                     </div>
                   </div>
+                  {!isMine && (
+                    <button
+                      onClick={() => handleDeleteMessage(msg.id)}
+                      disabled={deletingMsg === msg.id}
+                      className="opacity-0 group-hover:opacity-100 p-1 rounded-full hover:bg-danger/15 text-muted hover:text-danger transition-all bg-transparent border-none cursor-pointer flex-shrink-0 mb-1"
+                      title="Supprimer"
+                    >
+                      <Trash2 size={11} />
+                    </button>
+                  )}
                 </div>
               )
             })}

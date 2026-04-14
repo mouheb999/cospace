@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Avatar, Badge, Button } from '@/components/ui'
 import {
   MessageCircle, Users, TrendingUp, Camera, LogOut, Send, X,
-  Search, Circle, ChevronLeft
+  Search, Circle, ChevronLeft, Trash2
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth/context'
 import { createClient } from '@/lib/supabase/client'
@@ -69,6 +69,7 @@ export default function ResponsableDashboard() {
   const [newMessage, setNewMessage] = useState('')
   const [sending, setSending] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const [deletingMsg, setDeletingMsg] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -561,7 +562,17 @@ export default function ResponsableDashboard() {
                       {chatMessages.map((msg) => {
                         const isMine = msg.sender_id === user?.id
                         return (
-                          <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
+                          <div key={msg.id} className={`group flex items-end gap-1.5 ${isMine ? 'justify-end' : 'justify-start'}`}>
+                            {isMine && (
+                              <button
+                                onClick={() => { setDeletingMsg(msg.id); supabase.from('messages').delete().eq('id', msg.id).then(() => { setChatMessages(prev => prev.filter(m => m.id !== msg.id)); setDeletingMsg(null) }) }}
+                                disabled={deletingMsg === msg.id}
+                                className="opacity-0 group-hover:opacity-100 p-1 rounded-full hover:bg-danger/15 text-muted hover:text-danger transition-all bg-transparent border-none cursor-pointer flex-shrink-0 mb-1"
+                                title="Supprimer"
+                              >
+                                <Trash2 size={11} />
+                              </button>
+                            )}
                             <div className={`max-w-[80%] rounded-2xl px-3.5 py-2.5 ${
                               isMine ? 'bg-teal text-black rounded-br-md' : 'bg-surface border border-border rounded-bl-md'
                             }`}>
@@ -573,6 +584,16 @@ export default function ResponsableDashboard() {
                                 {isMine && msg.is_read && ' · Lu'}
                               </div>
                             </div>
+                            {!isMine && (
+                              <button
+                                onClick={() => { setDeletingMsg(msg.id); supabase.from('messages').delete().eq('id', msg.id).then(() => { setChatMessages(prev => prev.filter(m => m.id !== msg.id)); setDeletingMsg(null) }) }}
+                                disabled={deletingMsg === msg.id}
+                                className="opacity-0 group-hover:opacity-100 p-1 rounded-full hover:bg-danger/15 text-muted hover:text-danger transition-all bg-transparent border-none cursor-pointer flex-shrink-0 mb-1"
+                                title="Supprimer"
+                              >
+                                <Trash2 size={11} />
+                              </button>
+                            )}
                           </div>
                         )
                       })}
