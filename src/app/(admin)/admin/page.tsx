@@ -50,6 +50,9 @@ export default function AdminDashboard() {
   const [rewardText, setRewardText] = useState('')
   const [paymentRequests, setPaymentRequests] = useState<PaymentRequest[]>([])
   const [processingReq, setProcessingReq] = useState<string | null>(null)
+  const [showPdfModal, setShowPdfModal] = useState(false)
+  const [pdfType, setPdfType] = useState<'daily' | 'weekly' | 'monthly'>('daily')
+  const [pdfDate, setPdfDate] = useState(new Date().toISOString().split('T')[0])
 
   // UI states
   const [searchQuery, setSearchQuery] = useState('')
@@ -375,11 +378,54 @@ export default function AdminDashboard() {
     }
   }
 
-  const downloadDailyRequestsPDF = () => {
+  const getPrice = (membership: string) => {
+    const plan = pricing.find(p => p.plan_type === membership)
+    return plan ? plan.price : 0
+  }
+
+  const generateRequestsPDF = async () => {
     const doc = new jsPDF()
-    const todayStr = new Date().toISOString().split('T')[0]
-    const todayLabel = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
-    const approved = paymentRequests.filter(r => r.status === 'approved' && r.created_at.startsWith(todayStr))
+    const selectedDate = new Date(pdfDate)
+    const selectedStr = pdfDate
+
+    let startDate: string
+    let endDate: string
+    let periodLabel: string
+    let fileName: string
+
+    if (pdfType === 'daily') {
+      startDate = selectedStr
+      endDate = selectedStr
+      periodLabel = selectedDate.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+      fileName = `CoSpace_Entrees_${selectedStr}`
+    } else if (pdfType === 'weekly') {
+      const day = selectedDate.getDay()
+      const mondayOffset = day === 0 ? -6 : 1 - day
+      const monday = new Date(selectedDate)
+      monday.setDate(selectedDate.getDate() + mondayOffset)
+      const sunday = new Date(monday)
+      sunday.setDate(monday.getDate() + 6)
+      startDate = monday.toISOString().split('T')[0]
+      endDate = sunday.toISOString().split('T')[0]
+      periodLabel = `Semaine du ${monday.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} au ${sunday.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })}`
+      fileName = `CoSpace_Semaine_${startDate}`
+    } else {
+      startDate = `${selectedStr.slice(0, 7)}-01`
+      const lastDay = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 0).getDate()
+      endDate = `${selectedStr.slice(0, 7)}-${String(lastDay).padStart(2, '0')}`
+      periodLabel = selectedDate.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
+      fileName = `CoSpace_Mois_${selectedStr.slice(0, 7)}`
+    }
+
+    const { data } = await supabase
+      .from('payment_requests')
+      .select('*')
+      .eq('status', 'approved')
+      .gte('created_at', `${startDate}T00:00:00`)
+      .lte('created_at', `${endDate}T23:59:59`)
+      .order('created_at', { ascending: true })
+    const entries = (data || []) as PaymentRequest[]
+    const totalRevenue = entries.reduce((sum, r) => sum + getPrice(r.membership), 0)
 
     // Header
     doc.setFontSize(22)
@@ -387,51 +433,111 @@ export default function AdminDashboard() {
     doc.text('CoSpace', 14, 20)
     doc.setFontSize(10)
     doc.setTextColor(150, 150, 150)
-    doc.text('Liste des entrées du jour', 14, 28)
-    doc.text(todayLabel, 14, 34)
+    const titleMap = { daily: 'Rapport journalier', weekly: 'Rapport hebdomadaire', monthly: 'Rapport mensuel' }
+    doc.text(titleMap[pdfType], 14, 28)
+    doc.text(periodLabel, 14, 34)
     doc.text(`Généré le ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`, 14, 40)
 
-    const getPrice = (membership: string) => {
-      const plan = pricing.find(p => p.plan_type === membership)
-      return plan ? plan.price : 0
+    if (pdfType === 'daily') {
+      autoTable(doc, {
+        startY: 50,
+        head: [['#', 'Nom', 'Abonnement', 'Prix', 'Heure', 'Source']],
+        body: entries.map((r, i) => [
+          String(i + 1),
+          r.name,
+          planLabel(r.membership),
+          `${getPrice(r.membership).toLocaleString('fr-FR')} TND`,
+          new Date(r.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+          r.source === 'user' ? 'Membre' : 'Public',
+        ]),
+        theme: 'grid',
+        headStyles: { fillColor: [91, 191, 181], textColor: [0, 0, 0], fontStyle: 'bold', fontSize: 9 },
+        bodyStyles: { fontSize: 9 },
+        margin: { left: 14 },
+      })
+      const finalY = (doc as any).lastAutoTable?.finalY || 80
+      doc.setFontSize(11)
+      doc.setTextColor(40, 40, 40)
+      doc.text(`Total : ${entries.length} entrée${entries.length !== 1 ? 's' : ''}`, 14, finalY + 10)
+      doc.text(`Revenu : ${totalRevenue.toLocaleString('fr-FR')} TND`, 14, finalY + 18)
+    } else {
+      const byPlan: Record<string, { count: number; revenue: number }> = {}
+      entries.forEach(r => {
+        const price = getPrice(r.membership)
+        if (!byPlan[r.membership]) byPlan[r.membership] = { count: 0, revenue: 0 }
+        byPlan[r.membership].count++
+        byPlan[r.membership].revenue += price
+      })
+      const bySource = { user: entries.filter(r => r.source === 'user').length, public: entries.filter(r => r.source === 'public').length }
+
+      doc.setFontSize(11)
+      doc.setTextColor(40, 40, 40)
+      doc.text('Résumé', 14, 50)
+      doc.setFontSize(9)
+      doc.setTextColor(80, 80, 80)
+      doc.text(`Total entrées : ${entries.length}`, 14, 58)
+      doc.text(`Revenu total : ${totalRevenue.toLocaleString('fr-FR')} TND`, 14, 64)
+      doc.text(`Membres : ${bySource.user} · Public : ${bySource.public}`, 14, 70)
+
+      doc.setFontSize(11)
+      doc.setTextColor(40, 40, 40)
+      doc.text('Répartition par abonnement', 14, 82)
+      autoTable(doc, {
+        startY: 86,
+        head: [['Abonnement', 'Nombre', 'Prix unitaire', 'Revenu']],
+        body: Object.entries(byPlan).map(([plan, d]) => [
+          planLabel(plan),
+          String(d.count),
+          `${getPrice(plan).toLocaleString('fr-FR')} TND`,
+          `${d.revenue.toLocaleString('fr-FR')} TND`,
+        ]),
+        theme: 'grid',
+        headStyles: { fillColor: [91, 191, 181], textColor: [0, 0, 0], fontStyle: 'bold', fontSize: 9 },
+        bodyStyles: { fontSize: 9 },
+        margin: { left: 14 },
+      })
+
+      const byDay: Record<string, { count: number; revenue: number }> = {}
+      entries.forEach(r => {
+        const day = r.created_at.split('T')[0]
+        if (!byDay[day]) byDay[day] = { count: 0, revenue: 0 }
+        byDay[day].count++
+        byDay[day].revenue += getPrice(r.membership)
+      })
+      const tableY = (doc as any).lastAutoTable?.finalY || 120
+      doc.setFontSize(11)
+      doc.setTextColor(40, 40, 40)
+      doc.text('Détail par jour', 14, tableY + 10)
+      autoTable(doc, {
+        startY: tableY + 14,
+        head: [['Date', 'Entrées', 'Revenu']],
+        body: Object.entries(byDay).sort().map(([day, d]) => [
+          new Date(day).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' }),
+          String(d.count),
+          `${d.revenue.toLocaleString('fr-FR')} TND`,
+        ]),
+        theme: 'striped',
+        headStyles: { fillColor: [91, 191, 181], textColor: [0, 0, 0], fontStyle: 'bold', fontSize: 9 },
+        bodyStyles: { fontSize: 9 },
+        margin: { left: 14 },
+      })
+
+      const finalY2 = (doc as any).lastAutoTable?.finalY || 160
+      doc.setFontSize(12)
+      doc.setTextColor(91, 191, 181)
+      doc.text(`Revenu total : ${totalRevenue.toLocaleString('fr-FR')} TND`, 14, finalY2 + 12)
     }
-    const totalRevenue = approved.reduce((sum, r) => sum + getPrice(r.membership), 0)
 
-    // Table
-    autoTable(doc, {
-      startY: 50,
-      head: [['#', 'Nom', 'Abonnement', 'Prix', 'Heure', 'Source']],
-      body: approved.map((r, i) => [
-        String(i + 1),
-        r.name,
-        planLabel(r.membership),
-        `${getPrice(r.membership).toLocaleString('fr-FR')} TND`,
-        new Date(r.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
-        r.source === 'user' ? 'Membre' : 'Public',
-      ]),
-      theme: 'grid',
-      headStyles: { fillColor: [91, 191, 181], textColor: [0, 0, 0], fontStyle: 'bold', fontSize: 9 },
-      bodyStyles: { fontSize: 9 },
-      margin: { left: 14 },
-    })
-
-    // Total
-    const finalY = (doc as any).lastAutoTable?.finalY || 80
-    doc.setFontSize(11)
-    doc.setTextColor(40, 40, 40)
-    doc.text(`Total : ${approved.length} entrée${approved.length !== 1 ? 's' : ''}`, 14, finalY + 10)
-    doc.text(`Revenu du jour : ${totalRevenue.toLocaleString('fr-FR')} TND`, 14, finalY + 18)
-
-    // Footer
     const pageCount = doc.getNumberOfPages()
     for (let i = 1; i <= pageCount; i++) {
       doc.setPage(i)
       doc.setFontSize(7)
       doc.setTextColor(180, 180, 180)
-      doc.text(`CoSpace — Entrées du ${todayLabel} — Page ${i}/${pageCount}`, 14, doc.internal.pageSize.height - 10)
+      doc.text(`CoSpace — ${titleMap[pdfType]} — Page ${i}/${pageCount}`, 14, doc.internal.pageSize.height - 10)
     }
 
-    doc.save(`CoSpace_Entrees_${todayStr}.pdf`)
+    doc.save(`${fileName}.pdf`)
+    setShowPdfModal(false)
   }
 
   const handleApproveRequest = async (req: PaymentRequest) => {
@@ -943,11 +1049,11 @@ export default function AdminDashboard() {
                 <p className="text-[0.75rem] text-muted mt-0.5">{paymentRequests.filter(r => r.status === 'pending').length} en attente · {paymentRequests.length} total</p>
               </div>
               <button
-                onClick={downloadDailyRequestsPDF}
+                onClick={() => { setPdfDate(new Date().toISOString().split('T')[0]); setShowPdfModal(true) }}
                 className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[0.78rem] font-bold cursor-pointer transition-all border bg-surface2 text-teal border-teal/30 hover:bg-teal/10"
               >
-                <Download size={14} />
-                PDF du jour
+                <FileText size={14} />
+                Générer PDF
               </button>
             </div>
 
@@ -1364,6 +1470,58 @@ export default function AdminDashboard() {
           </div>
         )}
       </main>
+
+      {/* PDF Generation Modal */}
+      {showPdfModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={() => setShowPdfModal(false)}>
+          <div className="bg-surface border border-border rounded-2xl w-[440px] max-w-[95vw] p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="font-display text-[1.3rem] tracking-[0.05em]">Générer un rapport</h3>
+              <button onClick={() => setShowPdfModal(false)} className="text-muted hover:text-white bg-transparent border-none cursor-pointer"><X size={18} /></button>
+            </div>
+
+            <div className="text-[0.68rem] font-bold text-muted uppercase tracking-[0.1em] mb-2">Type de rapport</div>
+            <div className="flex gap-2 mb-5">
+              {([
+                { value: 'daily' as const, label: 'Journalier', desc: 'Liste des entrées' },
+                { value: 'weekly' as const, label: 'Hebdomadaire', desc: 'Analytique semaine' },
+                { value: 'monthly' as const, label: 'Mensuel', desc: 'Analytique mois' },
+              ]).map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setPdfType(opt.value)}
+                  className={`flex-1 p-3 rounded-xl border text-center cursor-pointer transition-all bg-transparent ${
+                    pdfType === opt.value
+                      ? 'border-teal bg-teal/10 text-teal'
+                      : 'border-border text-muted hover:border-teal/30'
+                  }`}
+                >
+                  <div className="font-bold text-[0.82rem]">{opt.label}</div>
+                  <div className="text-[0.6rem] mt-0.5 opacity-70">{opt.desc}</div>
+                </button>
+              ))}
+            </div>
+
+            <div className="text-[0.68rem] font-bold text-muted uppercase tracking-[0.1em] mb-2">
+              {pdfType === 'daily' ? 'Date' : pdfType === 'weekly' ? 'Semaine contenant le' : 'Mois'}
+            </div>
+            <input
+              type={pdfType === 'monthly' ? 'month' : 'date'}
+              value={pdfType === 'monthly' ? pdfDate.slice(0, 7) : pdfDate}
+              onChange={(e) => setPdfDate(pdfType === 'monthly' ? `${e.target.value}-01` : e.target.value)}
+              className="w-full bg-surface2 border border-border rounded-xl px-4 py-3 text-[0.88rem] text-white mb-5 focus:outline-none focus:border-teal/50 [color-scheme:dark]"
+            />
+
+            <button
+              onClick={generateRequestsPDF}
+              className="w-full flex items-center justify-center gap-2 bg-teal text-black font-bold py-3 rounded-xl text-[0.88rem] border-none cursor-pointer hover:brightness-110 transition-all"
+            >
+              <Download size={16} />
+              Télécharger le PDF
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
