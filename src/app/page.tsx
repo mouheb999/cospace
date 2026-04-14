@@ -166,7 +166,7 @@ export default function LandingPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mt-10">
           {[
             { icon: '💻', name: 'Hot Desks', desc: 'Environnement calme et silencieux, connexion fibre haut débit, prises multiples.', color: 'teal' },
-            { icon: '�', name: 'Casiers Privés', desc: 'Casiers personnels sécurisés pour ranger vos affaires en toute tranquillité.', color: 'lime' },
+            { icon: '\u{1F512}', name: 'Casiers Privés', desc: 'Casiers personnels sécurisés pour ranger vos affaires en toute tranquillité.', color: 'lime' },
             { icon: '🌐', name: 'Internet Haut Débit', desc: 'Fibre optique ultra-rapide pour travailler sans interruption.', color: 'yellow-bright' },
             { icon: '☕', name: 'Espace Pause Café', desc: 'Distributeurs de snacks et café, espace détente pour vos pauses.', color: 'olive' },
           ].map((service, i) => (
