@@ -69,7 +69,8 @@ export default function ResponsableDashboard() {
   const [newMessage, setNewMessage] = useState('')
   const [sending, setSending] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
-  const [deletingMsg, setDeletingMsg] = useState<string | null>(null)
+  const [confirmDeleteConv, setConfirmDeleteConv] = useState(false)
+  const [deletingConv, setDeletingConv] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -545,12 +546,21 @@ export default function ResponsableDashboard() {
                       <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-success rounded-full border-2 border-surface" />
                     )}
                   </div>
-                  <div>
+                  <div className="flex-1">
                     <div className="font-bold text-[0.85rem]">{activeChat.first_name} {activeChat.last_name}</div>
                     <div className="text-[0.6rem] text-muted">
                       {activeChat.is_online ? <span className="text-success">En ligne</span> : 'Hors ligne'}
                     </div>
                   </div>
+                  {chatMessages.length > 0 && (
+                    <button
+                      onClick={() => setConfirmDeleteConv(true)}
+                      className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-danger/15 transition-colors bg-transparent border-none cursor-pointer text-muted hover:text-danger"
+                      title="Supprimer la conversation"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  )}
                 </div>
 
                 {/* Messages */}
@@ -562,17 +572,7 @@ export default function ResponsableDashboard() {
                       {chatMessages.map((msg) => {
                         const isMine = msg.sender_id === user?.id
                         return (
-                          <div key={msg.id} className={`group flex items-end gap-1.5 ${isMine ? 'justify-end' : 'justify-start'}`}>
-                            {isMine && (
-                              <button
-                                onClick={() => { setDeletingMsg(msg.id); supabase.from('messages').delete().eq('id', msg.id).then(() => { setChatMessages(prev => prev.filter(m => m.id !== msg.id)); setDeletingMsg(null) }) }}
-                                disabled={deletingMsg === msg.id}
-                                className="opacity-0 group-hover:opacity-100 p-1 rounded-full hover:bg-danger/15 text-muted hover:text-danger transition-all bg-transparent border-none cursor-pointer flex-shrink-0 mb-1"
-                                title="Supprimer"
-                              >
-                                <Trash2 size={11} />
-                              </button>
-                            )}
+                          <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
                             <div className={`max-w-[80%] rounded-2xl px-3.5 py-2.5 ${
                               isMine ? 'bg-teal text-black rounded-br-md' : 'bg-surface border border-border rounded-bl-md'
                             }`}>
@@ -584,16 +584,6 @@ export default function ResponsableDashboard() {
                                 {isMine && msg.is_read && ' · Lu'}
                               </div>
                             </div>
-                            {!isMine && (
-                              <button
-                                onClick={() => { setDeletingMsg(msg.id); supabase.from('messages').delete().eq('id', msg.id).then(() => { setChatMessages(prev => prev.filter(m => m.id !== msg.id)); setDeletingMsg(null) }) }}
-                                disabled={deletingMsg === msg.id}
-                                className="opacity-0 group-hover:opacity-100 p-1 rounded-full hover:bg-danger/15 text-muted hover:text-danger transition-all bg-transparent border-none cursor-pointer flex-shrink-0 mb-1"
-                                title="Supprimer"
-                              >
-                                <Trash2 size={11} />
-                              </button>
-                            )}
                           </div>
                         )
                       })}
@@ -625,6 +615,38 @@ export default function ResponsableDashboard() {
                     </button>
                   </div>
                 </div>
+                {/* Delete Conversation Confirm */}
+                {confirmDeleteConv && (
+                  <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={() => setConfirmDeleteConv(false)}>
+                    <div className="bg-surface border border-danger/30 rounded-2xl p-5 w-[360px] max-w-[90vw]" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="w-9 h-9 rounded-full bg-danger/15 flex items-center justify-center flex-shrink-0">
+                          <Trash2 size={16} className="text-danger" />
+                        </div>
+                        <div>
+                          <div className="font-bold text-[0.95rem]">Supprimer la conversation</div>
+                          <div className="text-[0.68rem] text-muted">avec {activeChat.first_name} {activeChat.last_name}</div>
+                        </div>
+                      </div>
+                      <p className="text-[0.8rem] text-muted mb-4">Tous les messages seront supprimés définitivement.</p>
+                      <div className="flex gap-2">
+                        <Button variant="outline" fullWidth onClick={() => setConfirmDeleteConv(false)} disabled={deletingConv}>Annuler</Button>
+                        <Button variant="danger" fullWidth disabled={deletingConv} onClick={async () => {
+                          if (!user || !activeChat) return
+                          setDeletingConv(true)
+                          await supabase.from('messages').delete().or(`and(sender_id.eq.${user.id},receiver_id.eq.${activeChat.user_id}),and(sender_id.eq.${activeChat.user_id},receiver_id.eq.${user.id})`)
+                          setChatMessages([])
+                          setDeletingConv(false)
+                          setConfirmDeleteConv(false)
+                          setActiveChat(null)
+                          fetchConversations()
+                        }}>
+                          {deletingConv ? 'Suppression...' : 'Supprimer'}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

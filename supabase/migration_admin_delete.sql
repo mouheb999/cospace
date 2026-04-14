@@ -46,18 +46,9 @@ CREATE POLICY "Admins can delete daily_revenue"
     )
   );
 
--- Allow users to delete their own messages (sender or receiver)
-CREATE POLICY "Users can delete own messages"
+-- Allow users to delete conversations they are part of (sender or receiver)
+CREATE POLICY "Users can delete own conversation messages"
   ON messages FOR DELETE
   USING (
     auth.uid() = sender_id OR auth.uid() = receiver_id
-  );
-
--- Allow admins to delete any messages
-CREATE POLICY "Admins can delete messages"
-  ON messages FOR DELETE
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'
-    )
   );

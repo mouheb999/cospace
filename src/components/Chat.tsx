@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { X, Send, MessageCircle, Trash2 } from 'lucide-react'
-import { Avatar } from '@/components/ui'
+import { Button, Avatar } from '@/components/ui'
 import { useAuth } from '@/lib/auth/context'
 import { createClient } from '@/lib/supabase/client'
 
@@ -28,7 +28,8 @@ export function Chat({ isOpen, onClose }: ChatProps) {
   const [sending, setSending] = useState(false)
   const [responsable, setResponsable] = useState<{ id: string; first_name: string; last_name: string; avatar_url: string | null; is_online: boolean; last_seen: string | null } | null>(null)
   const [loading, setLoading] = useState(true)
-  const [deletingMsg, setDeletingMsg] = useState<string | null>(null)
+  const [confirmDeleteConv, setConfirmDeleteConv] = useState(false)
+  const [deletingConv, setDeletingConv] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -122,11 +123,13 @@ export function Chat({ isOpen, onClose }: ChatProps) {
     }
   }, [isOpen])
 
-  const handleDeleteMessage = async (msgId: string) => {
-    setDeletingMsg(msgId)
-    await supabase.from('messages').delete().eq('id', msgId)
-    setMessages(prev => prev.filter(m => m.id !== msgId))
-    setDeletingMsg(null)
+  const handleDeleteConversation = async () => {
+    if (!user || !responsable) return
+    setDeletingConv(true)
+    await supabase.from('messages').delete().or(`and(sender_id.eq.${user.id},receiver_id.eq.${responsable.id}),and(sender_id.eq.${responsable.id},receiver_id.eq.${user.id})`)
+    setMessages([])
+    setDeletingConv(false)
+    setConfirmDeleteConv(false)
   }
 
   const handleSend = async () => {
@@ -198,14 +201,25 @@ export function Chat({ isOpen, onClose }: ChatProps) {
             <div className="text-[0.85rem] text-muted">Chargement...</div>
           )}
         </div>
-        {onClose && (
-          <button
-            onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface2 transition-colors bg-transparent border-none cursor-pointer text-muted hover:text-white"
-          >
-            <X size={18} />
-          </button>
-        )}
+        <div className="flex items-center gap-1.5">
+          {messages.length > 0 && (
+            <button
+              onClick={() => setConfirmDeleteConv(true)}
+              className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-danger/15 transition-colors bg-transparent border-none cursor-pointer text-muted hover:text-danger"
+              title="Supprimer la conversation"
+            >
+              <Trash2 size={16} />
+            </button>
+          )}
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface2 transition-colors bg-transparent border-none cursor-pointer text-muted hover:text-white"
+            >
+              <X size={18} />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Messages */}
@@ -228,17 +242,7 @@ export function Chat({ isOpen, onClose }: ChatProps) {
             {messages.map((msg) => {
               const isMine = msg.sender_id === user?.id
               return (
-                <div key={msg.id} className={`group flex items-end gap-1.5 ${isMine ? 'justify-end' : 'justify-start'}`}>
-                  {isMine && (
-                    <button
-                      onClick={() => handleDeleteMessage(msg.id)}
-                      disabled={deletingMsg === msg.id}
-                      className="opacity-0 group-hover:opacity-100 p-1 rounded-full hover:bg-danger/15 text-muted hover:text-danger transition-all bg-transparent border-none cursor-pointer flex-shrink-0 mb-1"
-                      title="Supprimer"
-                    >
-                      <Trash2 size={11} />
-                    </button>
-                  )}
+                <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
                   <div className={`max-w-[80%] rounded-2xl px-3.5 py-2.5 ${
                     isMine
                       ? 'bg-teal text-black rounded-br-md'
@@ -252,16 +256,6 @@ export function Chat({ isOpen, onClose }: ChatProps) {
                       {isMine && msg.is_read && ' · Lu'}
                     </div>
                   </div>
-                  {!isMine && (
-                    <button
-                      onClick={() => handleDeleteMessage(msg.id)}
-                      disabled={deletingMsg === msg.id}
-                      className="opacity-0 group-hover:opacity-100 p-1 rounded-full hover:bg-danger/15 text-muted hover:text-danger transition-all bg-transparent border-none cursor-pointer flex-shrink-0 mb-1"
-                      title="Supprimer"
-                    >
-                      <Trash2 size={11} />
-                    </button>
-                  )}
                 </div>
               )
             })}
@@ -292,6 +286,29 @@ export function Chat({ isOpen, onClose }: ChatProps) {
             >
               <Send size={16} className="text-black" />
             </button>
+          </div>
+        </div>
+      )}
+      {/* Delete Conversation Confirm */}
+      {confirmDeleteConv && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={() => setConfirmDeleteConv(false)}>
+          <div className="bg-surface border border-danger/30 rounded-2xl p-5 w-[360px] max-w-[90vw]" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-9 h-9 rounded-full bg-danger/15 flex items-center justify-center flex-shrink-0">
+                <Trash2 size={16} className="text-danger" />
+              </div>
+              <div>
+                <div className="font-bold text-[0.95rem]">Supprimer la conversation</div>
+                <div className="text-[0.68rem] text-muted">Irréversible</div>
+              </div>
+            </div>
+            <p className="text-[0.8rem] text-muted mb-4">Tous les messages de cette conversation seront supprimés définitivement.</p>
+            <div className="flex gap-2">
+              <Button variant="outline" fullWidth onClick={() => setConfirmDeleteConv(false)} disabled={deletingConv}>Annuler</Button>
+              <Button variant="danger" fullWidth onClick={handleDeleteConversation} disabled={deletingConv}>
+                {deletingConv ? 'Suppression...' : 'Supprimer'}
+              </Button>
+            </div>
           </div>
         </div>
       )}
