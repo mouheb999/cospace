@@ -375,6 +375,57 @@ export default function AdminDashboard() {
     }
   }
 
+  const downloadDailyRequestsPDF = () => {
+    const doc = new jsPDF()
+    const todayStr = new Date().toISOString().split('T')[0]
+    const todayLabel = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+    const approved = paymentRequests.filter(r => r.status === 'approved' && r.created_at.startsWith(todayStr))
+
+    // Header
+    doc.setFontSize(22)
+    doc.setTextColor(91, 191, 181)
+    doc.text('CoSpace', 14, 20)
+    doc.setFontSize(10)
+    doc.setTextColor(150, 150, 150)
+    doc.text('Liste des entrées du jour', 14, 28)
+    doc.text(todayLabel, 14, 34)
+    doc.text(`Généré le ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`, 14, 40)
+
+    // Table
+    autoTable(doc, {
+      startY: 50,
+      head: [['#', 'Nom', 'Abonnement', 'Heure', 'Source']],
+      body: approved.map((r, i) => [
+        String(i + 1),
+        r.name,
+        planLabel(r.membership),
+        new Date(r.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+        r.source === 'user' ? 'Membre' : 'Public',
+      ]),
+      theme: 'grid',
+      headStyles: { fillColor: [91, 191, 181], textColor: [0, 0, 0], fontStyle: 'bold', fontSize: 9 },
+      bodyStyles: { fontSize: 9 },
+      margin: { left: 14 },
+    })
+
+    // Total
+    const finalY = (doc as any).lastAutoTable?.finalY || 80
+    doc.setFontSize(11)
+    doc.setTextColor(40, 40, 40)
+    doc.text(`Total : ${approved.length} entrée${approved.length !== 1 ? 's' : ''}`, 14, finalY + 10)
+
+    // Footer
+    const pageCount = doc.getNumberOfPages()
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i)
+      doc.setFontSize(7)
+      doc.setTextColor(180, 180, 180)
+      doc.text(`CoSpace — Entrées du ${todayLabel} — Page ${i}/${pageCount}`, 14, doc.internal.pageSize.height - 10)
+    }
+
+    doc.save(`CoSpace_Entrees_${todayStr}.pdf`)
+  }
+
   const handleApproveRequest = async (req: PaymentRequest) => {
     setProcessingReq(req.id)
     await supabase.from('payment_requests').update({ status: 'approved', handled_by: user!.id, handled_at: new Date().toISOString() } as never).eq('id', req.id)
@@ -883,6 +934,13 @@ export default function AdminDashboard() {
                 <h1 className="font-display text-[1.6rem] md:text-[2.4rem] tracking-[0.06em]">Demandes de paiement</h1>
                 <p className="text-[0.75rem] text-muted mt-0.5">{paymentRequests.filter(r => r.status === 'pending').length} en attente · {paymentRequests.length} total</p>
               </div>
+              <button
+                onClick={downloadDailyRequestsPDF}
+                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[0.78rem] font-bold cursor-pointer transition-all border bg-surface2 text-teal border-teal/30 hover:bg-teal/10"
+              >
+                <Download size={14} />
+                PDF du jour
+              </button>
             </div>
 
             {/* Pending Section */}

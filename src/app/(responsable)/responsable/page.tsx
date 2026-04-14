@@ -5,10 +5,12 @@ import { useRouter } from 'next/navigation'
 import { Avatar, Badge, Button } from '@/components/ui'
 import {
   MessageCircle, Users, TrendingUp, Camera, LogOut, Send, X,
-  Search, Circle, ChevronLeft, Trash2, CheckCircle, XCircle, Clock, CreditCard, QrCode, Copy, ExternalLink
+  Search, Circle, ChevronLeft, Trash2, CheckCircle, XCircle, Clock, CreditCard, QrCode, Copy, ExternalLink, Download
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth/context'
 import { createClient } from '@/lib/supabase/client'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 
 type PageType = 'checkins' | 'leaderboard' | 'chats' | 'online' | 'requests'
 
@@ -274,6 +276,55 @@ export default function ResponsableDashboard() {
     fetchPaymentRequests()
   }
 
+  const planLabel = (t: string) => ({ daily: 'Journalier', weekly: 'Hebdomadaire', monthly: 'Mensuel', quarterly: 'Trimestriel' }[t] || t)
+
+  const downloadDailyRequestsPDF = () => {
+    const doc = new jsPDF()
+    const todayStr = new Date().toISOString().split('T')[0]
+    const todayLabel = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+    const approved = paymentRequests.filter(r => r.status === 'approved' && r.created_at.startsWith(todayStr))
+
+    doc.setFontSize(22)
+    doc.setTextColor(91, 191, 181)
+    doc.text('CoSpace', 14, 20)
+    doc.setFontSize(10)
+    doc.setTextColor(150, 150, 150)
+    doc.text('Liste des entrées du jour', 14, 28)
+    doc.text(todayLabel, 14, 34)
+    doc.text(`Généré le ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`, 14, 40)
+
+    autoTable(doc, {
+      startY: 50,
+      head: [['#', 'Nom', 'Abonnement', 'Heure', 'Source']],
+      body: approved.map((r, i) => [
+        String(i + 1),
+        r.name,
+        planLabel(r.membership),
+        new Date(r.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+        r.source === 'user' ? 'Membre' : 'Public',
+      ]),
+      theme: 'grid',
+      headStyles: { fillColor: [91, 191, 181], textColor: [0, 0, 0], fontStyle: 'bold', fontSize: 9 },
+      bodyStyles: { fontSize: 9 },
+      margin: { left: 14 },
+    })
+
+    const finalY = (doc as any).lastAutoTable?.finalY || 80
+    doc.setFontSize(11)
+    doc.setTextColor(40, 40, 40)
+    doc.text(`Total : ${approved.length} entrée${approved.length !== 1 ? 's' : ''}`, 14, finalY + 10)
+
+    const pageCount = doc.getNumberOfPages()
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i)
+      doc.setFontSize(7)
+      doc.setTextColor(180, 180, 180)
+      doc.text(`CoSpace — Entrées du ${todayLabel} — Page ${i}/${pageCount}`, 14, doc.internal.pageSize.height - 10)
+    }
+
+    doc.save(`CoSpace_Entrees_${todayStr}.pdf`)
+  }
+
   const isRecentlyOnline = (lastSeen: string | null) => {
     if (!lastSeen) return false
     return Date.now() - new Date(lastSeen).getTime() < 2 * 60 * 1000 // 2 minutes
@@ -464,7 +515,16 @@ export default function ResponsableDashboard() {
             {/* Payment Requests */}
             {activePage === 'requests' && (
               <div className="p-5 animate-fade-up">
-                <h2 className="font-display text-[1.6rem] tracking-[0.05em] mb-1">Demandes de paiement</h2>
+                <div className="flex items-center justify-between mb-1">
+                  <h2 className="font-display text-[1.6rem] tracking-[0.05em]">Demandes de paiement</h2>
+                  <button
+                    onClick={downloadDailyRequestsPDF}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[0.72rem] font-bold cursor-pointer transition-all border bg-surface2 text-teal border-teal/30 hover:bg-teal/10"
+                  >
+                    <Download size={13} />
+                    PDF du jour
+                  </button>
+                </div>
                 <p className="text-[0.72rem] text-muted mb-5">{pendingCount} en attente · {paymentRequests.length} total</p>
 
                 {/* QR Code Card */}
