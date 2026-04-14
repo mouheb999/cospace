@@ -391,14 +391,21 @@ export default function AdminDashboard() {
     doc.text(todayLabel, 14, 34)
     doc.text(`Généré le ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`, 14, 40)
 
+    const getPrice = (membership: string) => {
+      const plan = pricing.find(p => p.plan_type === membership)
+      return plan ? plan.price : 0
+    }
+    const totalRevenue = approved.reduce((sum, r) => sum + getPrice(r.membership), 0)
+
     // Table
     autoTable(doc, {
       startY: 50,
-      head: [['#', 'Nom', 'Abonnement', 'Heure', 'Source']],
+      head: [['#', 'Nom', 'Abonnement', 'Prix', 'Heure', 'Source']],
       body: approved.map((r, i) => [
         String(i + 1),
         r.name,
         planLabel(r.membership),
+        `${getPrice(r.membership).toLocaleString('fr-FR')} TND`,
         new Date(r.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
         r.source === 'user' ? 'Membre' : 'Public',
       ]),
@@ -413,6 +420,7 @@ export default function AdminDashboard() {
     doc.setFontSize(11)
     doc.setTextColor(40, 40, 40)
     doc.text(`Total : ${approved.length} entrée${approved.length !== 1 ? 's' : ''}`, 14, finalY + 10)
+    doc.text(`Revenu du jour : ${totalRevenue.toLocaleString('fr-FR')} TND`, 14, finalY + 18)
 
     // Footer
     const pageCount = doc.getNumberOfPages()

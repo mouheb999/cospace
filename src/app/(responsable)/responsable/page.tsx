@@ -74,6 +74,7 @@ export default function ResponsableDashboard() {
   const [conversations, setConversations] = useState<ChatConversation[]>([])
   const [onlineUsers, setOnlineUsers] = useState<LeaderboardEntry[]>([])
   const [paymentRequests, setPaymentRequests] = useState<PaymentRequest[]>([])
+  const [pricingMap, setPricingMap] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
   const [processingReq, setProcessingReq] = useState<string | null>(null)
   const [showQR, setShowQR] = useState(false)
@@ -137,7 +138,7 @@ export default function ResponsableDashboard() {
 
   const fetchAllData = async () => {
     setLoading(true)
-    await Promise.all([fetchTodayCheckins(), fetchLeaderboard(), fetchConversations(), fetchOnlineUsers(), fetchPaymentRequests()])
+    await Promise.all([fetchTodayCheckins(), fetchLeaderboard(), fetchConversations(), fetchOnlineUsers(), fetchPaymentRequests(), fetchPricing()])
     setLoading(false)
   }
 
@@ -242,6 +243,15 @@ export default function ResponsableDashboard() {
     if (data) setPaymentRequests(data as PaymentRequest[])
   }
 
+  const fetchPricing = async () => {
+    const { data } = await supabase.from('pricing').select('plan_type, price')
+    if (data) {
+      const map: Record<string, number> = {}
+      data.forEach((p: any) => { map[p.plan_type] = p.price })
+      setPricingMap(map)
+    }
+  }
+
   const handleApproveRequest = async (req: PaymentRequest) => {
     setProcessingReq(req.id)
     // Update request status
@@ -293,13 +303,16 @@ export default function ResponsableDashboard() {
     doc.text(todayLabel, 14, 34)
     doc.text(`Généré le ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`, 14, 40)
 
+    const totalRevenue = approved.reduce((sum, r) => sum + (pricingMap[r.membership] || 0), 0)
+
     autoTable(doc, {
       startY: 50,
-      head: [['#', 'Nom', 'Abonnement', 'Heure', 'Source']],
+      head: [['#', 'Nom', 'Abonnement', 'Prix', 'Heure', 'Source']],
       body: approved.map((r, i) => [
         String(i + 1),
         r.name,
         planLabel(r.membership),
+        `${(pricingMap[r.membership] || 0).toLocaleString('fr-FR')} TND`,
         new Date(r.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
         r.source === 'user' ? 'Membre' : 'Public',
       ]),
@@ -313,6 +326,7 @@ export default function ResponsableDashboard() {
     doc.setFontSize(11)
     doc.setTextColor(40, 40, 40)
     doc.text(`Total : ${approved.length} entrée${approved.length !== 1 ? 's' : ''}`, 14, finalY + 10)
+    doc.text(`Revenu du jour : ${totalRevenue.toLocaleString('fr-FR')} TND`, 14, finalY + 18)
 
     const pageCount = doc.getNumberOfPages()
     for (let i = 1; i <= pageCount; i++) {
