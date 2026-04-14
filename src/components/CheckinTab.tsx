@@ -163,7 +163,7 @@ export function CheckinTab({ onSuccess }: CheckinTabProps) {
       setErrorMsg(result.error)
       setStep('error')
     }
-  }, [photoData, location])
+  }, [photoData, location, onSuccess])
 
   // ── Reset ─────────────────────────────────────────────────────────────────
   const reset = useCallback(() => {

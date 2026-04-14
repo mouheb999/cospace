@@ -834,7 +834,7 @@ export default function ClientDashboard() {
 
         {/* Check-in Tab */}
         {activeTab === 'checkin' && (
-          <CheckinTab onSuccess={() => { fetchDashboardData(); refreshStreak() }} />
+          <CheckinTab onSuccess={() => { setTimeout(() => { fetchDashboardData(); refreshStreak() }, 800) }} />
         )}
 
         {/* Assistance / Chat Tab */}
