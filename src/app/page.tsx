@@ -109,7 +109,9 @@ export default function LandingPage() {
             <Link href="/register">
               <Button variant="teal">Commencer Gratuitement</Button>
             </Link>
-            <Button variant="outline">Découvrir l&apos;espace</Button>
+            <a href="https://www.instagram.com/tamarzist_skills_institute/reel/DQ11dodCOjp/" target="_blank" rel="noopener noreferrer">
+              <Button variant="outline"><Instagram size={16} /> Découvrir l&apos;espace</Button>
+            </a>
           </div>
         </div>
 
@@ -163,10 +165,10 @@ export default function LandingPage() {
         <h2 className="font-display text-[1.6rem] tracking-[0.08em]">Tout ce dont vous avez besoin.</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mt-10">
           {[
-            { icon: '💻', name: 'Hot Desks', desc: 'Postes flexibles avec écrans, connexion fibre 1Gbps, prises multiples.', color: 'teal' },
-            { icon: '🚪', name: 'Bureaux Privés', desc: 'Espaces fermés pour équipes, badge accès 24/7, personnalisables.', color: 'lime' },
-            { icon: '📽️', name: 'Salles de Réunion', desc: 'Équipées projecteur, tableau blanc, réservation à l\'heure.', color: 'yellow-bright' },
-            { icon: '☕', name: 'Espace Lounge', desc: 'Canapés, café, imprimante, casiers sécurisés inclus.', color: 'olive' },
+            { icon: '💻', name: 'Hot Desks', desc: 'Environnement calme et silencieux, connexion fibre haut débit, prises multiples.', color: 'teal' },
+            { icon: '�', name: 'Casiers Privés', desc: 'Casiers personnels sécurisés pour ranger vos affaires en toute tranquillité.', color: 'lime' },
+            { icon: '🌐', name: 'Internet Haut Débit', desc: 'Fibre optique ultra-rapide pour travailler sans interruption.', color: 'yellow-bright' },
+            { icon: '☕', name: 'Espace Pause Café', desc: 'Distributeurs de snacks et café, espace détente pour vos pauses.', color: 'olive' },
           ].map((service, i) => (
             <div
               key={i}
@@ -249,9 +251,8 @@ export default function LandingPage() {
             <div className="font-display text-[1.4rem] tracking-[0.06em] mb-5">Horaires d&apos;ouverture</div>
             <div className="flex flex-col gap-3.5">
               {[
-                { day: 'Lundi – Vendredi', time: '08h00 – 23h00' },
-                { day: 'Samedi', time: '09h00 – 22h00' },
-                { day: 'Dimanche', time: '10h00 – 20h00' },
+                { day: 'Lundi – Samedi', time: '08h00 – 23h00' },
+                { day: 'Dimanche', time: '08h30 – 23h00' },
               ].map((item, i) => (
                 <div key={i} className="flex justify-between items-center py-3 border-b border-border">
                   <span className="font-semibold text-[0.85rem]">{item.day}</span>
