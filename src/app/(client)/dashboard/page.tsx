@@ -7,7 +7,7 @@ import { LiveDot } from '@/components/decorations/Decorations'
 import { CheckinTab } from '@/components/CheckinTab'
 import { 
   Home, Camera, CreditCard, TrendingUp, User, 
-  ChevronRight, Copy, LogOut, Bell, Settings, Loader2, Check, Edit3, Calendar, MessageCircle, Send
+  ChevronRight, Copy, LogOut, Bell, Settings, Loader2, Check, Edit3, Calendar, MessageCircle, Send, X, CheckCircle
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth/context'
 import { useProfile } from '@/hooks/useProfile'
@@ -64,6 +64,12 @@ export default function ClientDashboard() {
   const [unreadMessages, setUnreadMessages] = useState(0)
   const [showSubDetails, setShowSubDetails] = useState(false)
   const [chatActive, setChatActive] = useState(false)
+  const [showPayModal, setShowPayModal] = useState(false)
+  const [payMembership, setPayMembership] = useState('')
+  const [paySubmitting, setPaySubmitting] = useState(false)
+  const [paySuccess, setPaySuccess] = useState(false)
+  const [payPlans, setPayPlans] = useState<{ plan_type: string; name: string; price: number }[]>([])
+  const [pendingRequest, setPendingRequest] = useState<{ id: string; membership: string; created_at: string } | null>(null)
   const [notifPrefs, setNotifPrefs] = useState({
     streak_reminder: true,
     checkin_confirmation: true,
@@ -93,6 +99,20 @@ export default function ClientDashboard() {
         console.log('[Dashboard] Memberships status:', mStatus, 'Count:', membershipData?.length ?? 'null', 'Error:', membershipError)
         if (membershipError) console.error('[Dashboard] Memberships full error:', JSON.stringify(membershipError, null, 2))
         if (membershipData) setMemberships(membershipData)
+
+        // Fetch pricing plans for pay modal
+        const { data: pricingPlans } = await supabase.from('pricing').select('plan_type, name, price').order('price', { ascending: true })
+        if (pricingPlans) setPayPlans(pricingPlans as any)
+
+        // Check for pending payment request
+        const { data: pendingReq } = await supabase
+          .from('payment_requests')
+          .select('id, membership, created_at')
+          .eq('user_id', user.id)
+          .eq('status', 'pending')
+          .order('created_at', { ascending: false })
+          .limit(1)
+        if (pendingReq && pendingReq.length > 0) setPendingRequest(pendingReq[0] as any)
 
         // Fetch announcements (table may not exist yet)
         console.log('[Dashboard] Fetching announcements')
@@ -484,6 +504,25 @@ export default function ClientDashboard() {
     }
   }
 
+  const handlePaySubmit = async () => {
+    if (!payMembership || !user || !profile) return
+    setPaySubmitting(true)
+    const payName = (profile.first_name === 'user' || !profile.first_name) ? '' : `${profile.first_name} ${profile.last_name}`
+    const { error: insertErr } = await supabase.from('payment_requests').insert({
+      name: payName || profile.first_name,
+      membership: payMembership,
+      source: 'user',
+      status: 'pending',
+      user_id: user.id,
+    } as never)
+    setPaySubmitting(false)
+    if (!insertErr) {
+      setPaySuccess(true)
+      setPendingRequest({ id: '', membership: payMembership, created_at: new Date().toISOString() })
+      setTimeout(() => { setPaySuccess(false); setShowPayModal(false); setPayMembership('') }, 2000)
+    }
+  }
+
   // Get active membership
   const activeMembership = memberships.find(m => m.status === 'active')
   const daysRemaining = activeMembership 
@@ -572,6 +611,30 @@ export default function ClientDashboard() {
                 Bonjour, <span className="text-teal">{profile.first_name}</span> 👋
               </h1>
             </div>
+
+            {/* PAY Button — primary action */}
+            {pendingRequest ? (
+              <div className="w-full bg-yellow-bright/10 border-2 border-yellow-bright/30 rounded-[20px] p-5 mb-4 text-center">
+                <div className="text-[1.4rem] mb-1">⏳</div>
+                <div className="font-display text-[1.1rem] text-yellow-bright tracking-[0.04em]">Demande en attente</div>
+                <div className="text-[0.72rem] text-muted mt-1">
+                  Abonnement <strong className="text-white capitalize">{pendingRequest.membership}</strong> · Soumise le {new Date(pendingRequest.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowPayModal(true)}
+                className="w-full bg-gradient-to-r from-teal to-[#4ecdc4] text-black rounded-[20px] p-6 flex items-center justify-between cursor-pointer mb-4 transition-all hover:scale-[1.01] hover:shadow-[0_0_40px_rgba(91,191,181,0.2)] border-none active:scale-[0.99]"
+              >
+                <div className="text-left">
+                  <div className="font-display text-[2rem] tracking-[0.04em] leading-none mb-1">Payer</div>
+                  <div className="text-[0.78rem] opacity-70 font-semibold">Souscrire ou renouveler un abonnement</div>
+                </div>
+                <div className="w-14 h-14 rounded-full bg-black/15 flex items-center justify-center flex-shrink-0">
+                  <CreditCard size={26} />
+                </div>
+              </button>
+            )}
 
             {/* Streak Card */}
             <Card variant="streak" className={`mb-4 flex items-center justify-between ${streakData?.status === 'warning' ? 'border-yellow-bright/40' : ''}`}>
@@ -1242,6 +1305,88 @@ export default function ClientDashboard() {
           </div>
         )}
       </main>
+
+      {/* Pay Modal */}
+      {showPayModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center z-[200]" onClick={() => !paySubmitting && setShowPayModal(false)}>
+          <div
+            className="bg-[#111] border border-[#2a2a2a] rounded-t-3xl sm:rounded-3xl w-full sm:max-w-[420px] p-6 animate-fade-up max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {paySuccess ? (
+              <div className="text-center py-8">
+                <div className="w-14 h-14 rounded-full bg-teal/15 border border-teal/30 flex items-center justify-center mx-auto mb-4">
+                  <CheckCircle size={28} className="text-teal" />
+                </div>
+                <div className="font-display text-[1.3rem] tracking-[0.04em] mb-1">Demande envoyée</div>
+                <div className="text-[0.78rem] text-muted">En attente de validation par le staff</div>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between mb-5">
+                  <div>
+                    <h3 className="font-display text-[1.4rem] tracking-[0.04em]">Paiement</h3>
+                    <p className="text-[0.72rem] text-muted">Choisissez votre formule</p>
+                  </div>
+                  <button onClick={() => setShowPayModal(false)} className="w-8 h-8 rounded-full bg-surface2 flex items-center justify-center border-none cursor-pointer text-muted hover:text-white transition-colors">
+                    <X size={16} />
+                  </button>
+                </div>
+
+                {/* Name (auto-filled, editable if "user" or empty) */}
+                <div className="mb-4">
+                  <label className="text-[0.68rem] font-semibold tracking-[0.08em] uppercase text-muted block mb-1.5">Nom</label>
+                  <div className="bg-surface2 border border-border text-white py-3 px-4 rounded-xl text-[0.85rem]">
+                    {profile.first_name} {profile.last_name}
+                  </div>
+                </div>
+
+                {/* Membership selection */}
+                <div className="mb-4">
+                  <label className="text-[0.68rem] font-semibold tracking-[0.08em] uppercase text-muted block mb-1.5">Abonnement</label>
+                  <div className="flex flex-col gap-2">
+                    {payPlans.map((plan) => (
+                      <button
+                        key={plan.plan_type}
+                        type="button"
+                        onClick={() => setPayMembership(plan.plan_type)}
+                        className={`flex items-center justify-between p-3.5 rounded-xl border-2 cursor-pointer transition-all text-left ${
+                          payMembership === plan.plan_type
+                            ? 'bg-teal/10 border-teal'
+                            : 'bg-surface border-border hover:border-teal/30'
+                        }`}
+                      >
+                        <div>
+                          <div className="font-bold text-[0.85rem] text-white">{plan.name}</div>
+                          <div className="text-[0.68rem] text-muted capitalize">{plan.plan_type}</div>
+                        </div>
+                        <div className="font-display text-[1.1rem] text-teal">{Math.round(plan.price)} TND</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Timestamp */}
+                <div className="mb-5">
+                  <label className="text-[0.68rem] font-semibold tracking-[0.08em] uppercase text-muted block mb-1.5">Horodatage</label>
+                  <div className="bg-surface2 border border-border text-muted py-3 px-4 rounded-xl text-[0.78rem]">
+                    {new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })} — {new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                  </div>
+                </div>
+
+                {/* Submit */}
+                <button
+                  onClick={handlePaySubmit}
+                  disabled={!payMembership || paySubmitting}
+                  className="w-full bg-teal text-black font-bold py-4 rounded-xl text-[0.95rem] border-none cursor-pointer transition-all hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {paySubmitting ? <Loader2 size={18} className="animate-spin" /> : 'Envoyer la demande'}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Bottom Tabs */}
       <nav className="fixed bottom-0 left-0 right-0 z-[100] bg-bg/97 backdrop-blur-2xl border-t border-border grid grid-cols-5 py-2 pb-[max(8px,env(safe-area-inset-bottom))]">

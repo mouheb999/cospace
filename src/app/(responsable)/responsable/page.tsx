@@ -5,12 +5,22 @@ import { useRouter } from 'next/navigation'
 import { Avatar, Badge, Button } from '@/components/ui'
 import {
   MessageCircle, Users, TrendingUp, Camera, LogOut, Send, X,
-  Search, Circle, ChevronLeft, Trash2
+  Search, Circle, ChevronLeft, Trash2, CheckCircle, XCircle, Clock, CreditCard, QrCode, Copy, ExternalLink
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth/context'
 import { createClient } from '@/lib/supabase/client'
 
-type PageType = 'checkins' | 'leaderboard' | 'chats' | 'online'
+type PageType = 'checkins' | 'leaderboard' | 'chats' | 'online' | 'requests'
+
+interface PaymentRequest {
+  id: string
+  name: string
+  membership: string
+  source: 'user' | 'public'
+  status: 'pending' | 'approved' | 'rejected'
+  user_id: string | null
+  created_at: string
+}
 
 interface CheckinEntry {
   id: string
@@ -61,7 +71,11 @@ export default function ResponsableDashboard() {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
   const [conversations, setConversations] = useState<ChatConversation[]>([])
   const [onlineUsers, setOnlineUsers] = useState<LeaderboardEntry[]>([])
+  const [paymentRequests, setPaymentRequests] = useState<PaymentRequest[]>([])
   const [loading, setLoading] = useState(true)
+  const [processingReq, setProcessingReq] = useState<string | null>(null)
+  const [showQR, setShowQR] = useState(false)
+  const [copiedLink, setCopiedLink] = useState(false)
 
   // Chat state
   const [activeChat, setActiveChat] = useState<ChatConversation | null>(null)
@@ -121,7 +135,7 @@ export default function ResponsableDashboard() {
 
   const fetchAllData = async () => {
     setLoading(true)
-    await Promise.all([fetchTodayCheckins(), fetchLeaderboard(), fetchConversations(), fetchOnlineUsers()])
+    await Promise.all([fetchTodayCheckins(), fetchLeaderboard(), fetchConversations(), fetchOnlineUsers(), fetchPaymentRequests()])
     setLoading(false)
   }
 
@@ -216,6 +230,48 @@ export default function ResponsableDashboard() {
     }).sort((a: ChatConversation, b: ChatConversation) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime())
 
     setConversations(convs)
+  }
+
+  const fetchPaymentRequests = async () => {
+    const { data } = await supabase
+      .from('payment_requests')
+      .select('*')
+      .order('created_at', { ascending: false })
+    if (data) setPaymentRequests(data as PaymentRequest[])
+  }
+
+  const handleApproveRequest = async (req: PaymentRequest) => {
+    setProcessingReq(req.id)
+    // Update request status
+    await supabase.from('payment_requests').update({ status: 'approved', handled_by: user!.id, handled_at: new Date().toISOString() } as never).eq('id', req.id)
+
+    // If user_id exists, create membership
+    if (req.user_id) {
+      const { data: pricingData } = await supabase.from('pricing').select('price, duration_days').eq('plan_type', req.membership).single()
+      const pricing = pricingData as { price: number; duration_days: number } | null
+      if (pricing) {
+        const startDate = new Date().toISOString().split('T')[0]
+        const endDate = new Date(Date.now() + pricing.duration_days * 86400000).toISOString().split('T')[0]
+        await supabase.from('memberships').insert({
+          user_id: req.user_id,
+          plan_type: req.membership,
+          price_paid: pricing.price,
+          start_date: startDate,
+          end_date: endDate,
+          status: 'active',
+        } as never)
+      }
+    }
+
+    setProcessingReq(null)
+    fetchPaymentRequests()
+  }
+
+  const handleRejectRequest = async (reqId: string) => {
+    setProcessingReq(reqId)
+    await supabase.from('payment_requests').update({ status: 'rejected', handled_by: user!.id, handled_at: new Date().toISOString() } as never).eq('id', reqId)
+    setProcessingReq(null)
+    fetchPaymentRequests()
   }
 
   const isRecentlyOnline = (lastSeen: string | null) => {
@@ -339,7 +395,9 @@ export default function ResponsableDashboard() {
     `${c.first_name} ${c.last_name}`.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
+  const pendingCount = paymentRequests.filter(r => r.status === 'pending').length
   const navItems = [
+    { id: 'requests' as const, label: 'Demandes', icon: CreditCard, badge: pendingCount },
     { id: 'checkins' as const, label: 'Check-ins', icon: Camera, badge: todayCheckins.length },
     { id: 'leaderboard' as const, label: 'Classement', icon: TrendingUp },
     { id: 'chats' as const, label: 'Messages', icon: MessageCircle, badge: totalUnread },
@@ -384,7 +442,9 @@ export default function ResponsableDashboard() {
             {item.label}
             {item.badge ? (
               <span className={`text-[0.6rem] font-bold px-1.5 py-0.5 rounded-full ${
-                item.id === 'chats' && totalUnread > 0 ? 'bg-danger text-white' : 'bg-teal/15 text-teal'
+                item.id === 'chats' && totalUnread > 0 ? 'bg-danger text-white' :
+                item.id === 'requests' && pendingCount > 0 ? 'bg-yellow-bright text-black' :
+                'bg-teal/15 text-teal'
               }`}>
                 {item.badge}
               </span>
@@ -401,6 +461,145 @@ export default function ResponsableDashboard() {
           </div>
         ) : (
           <>
+            {/* Payment Requests */}
+            {activePage === 'requests' && (
+              <div className="p-5 animate-fade-up">
+                <h2 className="font-display text-[1.6rem] tracking-[0.05em] mb-1">Demandes de paiement</h2>
+                <p className="text-[0.72rem] text-muted mb-5">{pendingCount} en attente · {paymentRequests.length} total</p>
+
+                {/* QR Code Card */}
+                <div className="bg-surface border border-border rounded-[16px] p-4 mb-4">
+                  <button
+                    onClick={() => setShowQR(!showQR)}
+                    className="w-full flex items-center justify-between bg-transparent border-none cursor-pointer text-left"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-teal/10 border border-teal/20 flex items-center justify-center">
+                        <QrCode size={20} className="text-teal" />
+                      </div>
+                      <div>
+                        <div className="font-bold text-[0.88rem] text-white">Lien de paiement public</div>
+                        <div className="text-[0.68rem] text-muted">QR Code pour les visiteurs sans compte</div>
+                      </div>
+                    </div>
+                    <ChevronLeft size={16} className={`text-muted transition-transform ${showQR ? '-rotate-90' : 'rotate-180'}`} />
+                  </button>
+
+                  {showQR && (
+                    <div className="mt-4 pt-4 border-t border-border">
+                      <div className="flex flex-col items-center gap-4">
+                        {/* QR Code */}
+                        <div className="bg-white rounded-2xl p-4">
+                          <img
+                            src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(typeof window !== 'undefined' ? window.location.origin + '/pay' : '/pay')}`}
+                            alt="QR Code /pay"
+                            width={200}
+                            height={200}
+                            className="block"
+                          />
+                        </div>
+                        <div className="text-[0.72rem] text-muted text-center">Scannez ou partagez ce lien pour accéder au formulaire de paiement</div>
+
+                        {/* Action buttons */}
+                        <div className="flex gap-2 w-full">
+                          <button
+                            onClick={() => {
+                              const url = window.location.origin + '/pay'
+                              navigator.clipboard.writeText(url)
+                              setCopiedLink(true)
+                              setTimeout(() => setCopiedLink(false), 2000)
+                            }}
+                            className="flex-1 flex items-center justify-center gap-1.5 bg-surface2 border border-border text-white font-medium py-2.5 rounded-xl text-[0.78rem] cursor-pointer hover:border-teal/30 transition-all"
+                          >
+                            <Copy size={13} />
+                            {copiedLink ? '✓ Copié !' : 'Copier le lien'}
+                          </button>
+                          <button
+                            onClick={() => window.open('/pay', '_blank')}
+                            className="flex-1 flex items-center justify-center gap-1.5 bg-teal/10 border border-teal/25 text-teal font-medium py-2.5 rounded-xl text-[0.78rem] cursor-pointer hover:bg-teal/20 transition-all"
+                          >
+                            <ExternalLink size={13} />
+                            Ouvrir
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {paymentRequests.length === 0 ? (
+                  <div className="text-center py-12">
+                    <CreditCard size={40} className="text-muted/30 mx-auto mb-3" />
+                    <div className="text-muted text-sm">Aucune demande</div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-2.5">
+                    {paymentRequests.map((req) => (
+                      <div
+                        key={req.id}
+                        className={`bg-surface border rounded-[16px] p-4 ${
+                          req.status === 'pending' ? 'border-yellow-bright/30' :
+                          req.status === 'approved' ? 'border-teal/20' : 'border-danger/20'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between mb-2">
+                          <div className="flex items-center gap-2.5">
+                            <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${
+                              req.status === 'pending' ? 'bg-yellow-bright/15' :
+                              req.status === 'approved' ? 'bg-teal/15' : 'bg-danger/15'
+                            }`}>
+                              {req.status === 'pending' ? <Clock size={16} className="text-yellow-bright" /> :
+                               req.status === 'approved' ? <CheckCircle size={16} className="text-teal" /> :
+                               <XCircle size={16} className="text-danger" />}
+                            </div>
+                            <div>
+                              <div className="font-bold text-[0.88rem]">{req.name}</div>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <Badge variant={req.source === 'user' ? 'teal' : 'lime'}>{req.source === 'user' ? 'Membre' : 'Public'}</Badge>
+                                <span className="text-[0.65rem] text-muted capitalize">{req.membership}</span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="text-[0.62rem] text-muted text-right">
+                            {new Date(req.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
+                            <br />
+                            {new Date(req.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                        </div>
+
+                        {req.status === 'pending' && (
+                          <div className="flex gap-2 mt-3">
+                            <button
+                              onClick={() => handleApproveRequest(req)}
+                              disabled={processingReq === req.id}
+                              className="flex-1 flex items-center justify-center gap-1.5 bg-teal text-black font-bold py-2.5 rounded-xl text-[0.82rem] border-none cursor-pointer hover:brightness-110 disabled:opacity-50 transition-all"
+                            >
+                              <CheckCircle size={14} />
+                              Approuver
+                            </button>
+                            <button
+                              onClick={() => handleRejectRequest(req.id)}
+                              disabled={processingReq === req.id}
+                              className="flex-1 flex items-center justify-center gap-1.5 bg-surface2 border border-danger/30 text-danger font-bold py-2.5 rounded-xl text-[0.82rem] cursor-pointer hover:bg-danger/10 disabled:opacity-50 transition-all"
+                            >
+                              <XCircle size={14} />
+                              Rejeter
+                            </button>
+                          </div>
+                        )}
+
+                        {req.status !== 'pending' && (
+                          <div className={`text-[0.72rem] mt-2 font-medium ${req.status === 'approved' ? 'text-teal' : 'text-danger'}`}>
+                            {req.status === 'approved' ? '✅ Approuvé' : '❌ Rejeté'}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Today's Check-ins */}
             {activePage === 'checkins' && (
               <div className="p-5 animate-fade-up">
