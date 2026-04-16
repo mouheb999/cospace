@@ -47,7 +47,7 @@ export default function LandingPage() {
       const { data: pricingData } = await supabase.from('pricing').select('*').order('price', { ascending: true })
       if (pricingData && pricingData.length > 0) {
         const periodMap: Record<string, string> = { daily: '/jour', weekly: '/semaine', biweekly: '/2 semaines', monthly: '/mois', quarterly: '/trimestre' }
-        setPlans(pricingData.map((p: any) => ({
+        setPlans(pricingData.filter((p: any) => p.plan_type !== 'half_day').map((p: any) => ({
           name: p.name,
           price: String(Math.round(p.price)),
           period: periodMap[p.plan_type] || '',

@@ -696,6 +696,14 @@ export default function ClientDashboard() {
                   Abonnement <strong className="text-white">{planLabel(pendingRequest.membership)}</strong> · Soumise le {new Date(pendingRequest.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                 </div>
               </div>
+            ) : activeMembership ? (
+              <div className="w-full bg-teal/10 border-2 border-teal/30 rounded-[20px] p-5 mb-4 text-center">
+                <div className="text-[1.4rem] mb-1">✅</div>
+                <div className="font-display text-[1.1rem] text-teal tracking-[0.04em]">Abonnement actif</div>
+                <div className="text-[0.72rem] text-muted mt-1">
+                  <strong className="text-white">{planLabel(activeMembership.plan_type)}</strong> · {isHalfDay && halfDayCountdown ? halfDayCountdown + ' restant' : daysRemaining + 'j restants'}
+                </div>
+              </div>
             ) : (
               <button
                 onClick={() => setShowPayModal(true)}

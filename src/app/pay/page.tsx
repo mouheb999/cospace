@@ -25,11 +25,8 @@ export default function PublicPayPage() {
   useEffect(() => {
     const fetchPlans = async () => {
       const { data: pricingData } = await supabase.from('pricing').select('plan_type, name, price').order('price', { ascending: true })
-      const { data: hdData } = await supabase.from('settings').select('value').eq('key', 'half_day_enabled').single()
-      const halfDayOn = hdData && ((hdData as any).value === true || (hdData as any).value === 'true')
       if (pricingData) {
-        const filtered = halfDayOn ? pricingData : pricingData.filter((p: any) => p.plan_type !== 'half_day')
-        setPlans(filtered as PricingPlan[])
+        setPlans(pricingData.filter((p: any) => p.plan_type !== 'half_day') as PricingPlan[])
       }
     }
     fetchPlans()

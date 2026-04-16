@@ -37,12 +37,12 @@ VALUES (
   'half_day',
   'Demi-journée',
   'Accès demi-journée (1 créneau)',
-  5,
+  6,
   0,
   ARRAY['Accès 1 créneau', 'Wifi inclus', 'Café offert'],
   false
 )
-ON CONFLICT (plan_type) DO NOTHING;
+ON CONFLICT (plan_type) DO UPDATE SET price = 6;
 
 -- =============================================
 -- 4. ADD SETTINGS for half-day configuration
