@@ -57,6 +57,7 @@ ON CONFLICT (key) DO NOTHING;
 -- =============================================
 -- Allow anyone (including unauthenticated) to read settings
 -- so that the public pay form and client dashboard can check half_day_enabled
+DROP POLICY IF EXISTS "Anyone can read settings" ON settings;
 CREATE POLICY "Anyone can read settings"
   ON settings FOR SELECT
   USING (true);
@@ -65,6 +66,7 @@ CREATE POLICY "Anyone can read settings"
 -- 6. ALLOW responsable to insert memberships (for approval)
 -- =============================================
 -- Currently only admins can insert memberships. Responsable also approves requests.
+DROP POLICY IF EXISTS "Responsable can insert memberships" ON memberships;
 CREATE POLICY "Responsable can insert memberships"
   ON memberships FOR INSERT
   WITH CHECK (

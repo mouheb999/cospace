@@ -109,8 +109,11 @@ export default function ClientDashboard() {
 
         // Fetch pricing plans for pay modal (filter half_day based on settings)
         const { data: pricingPlans } = await supabase.from('pricing').select('plan_type, name, price').order('price', { ascending: true })
-        const { data: hdSetting } = await supabase.from('settings').select('value').eq('key', 'half_day_enabled').single()
-        const hdOn = hdSetting && ((hdSetting as any).value === true || (hdSetting as any).value === 'true')
+        let hdOn = false
+        try {
+          const { data: hdSetting } = await supabase.from('settings').select('value').eq('key', 'half_day_enabled').single()
+          hdOn = !!(hdSetting && ((hdSetting as any).value === true || (hdSetting as any).value === 'true'))
+        } catch { /* settings not available */ }
         if (pricingPlans) {
           const filtered = hdOn ? pricingPlans : pricingPlans.filter((p: any) => p.plan_type !== 'half_day')
           setPayPlans(filtered as any)
@@ -376,6 +379,71 @@ export default function ClientDashboard() {
     }
   }, [authLoading, user, router])
 
+  // Get active membership (computed before early returns so hooks are stable)
+  const activeMembership = memberships.find(m => m.status === 'active')
+  const isHalfDay = activeMembership?.plan_type === 'half_day'
+  const daysRemaining = activeMembership 
+    ? Math.max(0, Math.ceil((new Date(activeMembership.end_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
+    : 0
+  const membershipProgress = activeMembership
+    ? Math.max(2, Math.min(100, Math.round(((Date.now() - new Date(activeMembership.start_date).getTime()) / (new Date(activeMembership.end_date).getTime() - new Date(activeMembership.start_date).getTime())) * 100)))
+    : 0
+
+  // Half-day countdown timer
+  useEffect(() => {
+    if (!activeMembership || activeMembership.plan_type !== 'half_day' || !activeMembership.end_time) {
+      setHalfDayEndTime(null)
+      setHalfDayCountdown(null)
+      return
+    }
+    const end = new Date(activeMembership.end_time)
+    setHalfDayEndTime(end)
+
+    const tick = () => {
+      const remaining = end.getTime() - Date.now()
+      if (remaining <= 0) {
+        setHalfDayCountdown('00:00')
+        if (!halfDayNotifiedRef.current.has('ended')) {
+          halfDayNotifiedRef.current.add('ended')
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification('CoSpace', { body: 'Votre session demi-journée est terminée.' })
+          }
+        }
+        return
+      }
+      const mins = Math.floor(remaining / 60000)
+      const h = Math.floor(mins / 60)
+      const m = mins % 60
+      setHalfDayCountdown(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`)
+
+      if (mins <= 15 && !halfDayNotifiedRef.current.has('15min')) {
+        halfDayNotifiedRef.current.add('15min')
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification('CoSpace', { body: 'Votre session se termine dans 15 minutes.' })
+        }
+      }
+      if (mins <= 5 && !halfDayNotifiedRef.current.has('5min')) {
+        halfDayNotifiedRef.current.add('5min')
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification('CoSpace', { body: 'Votre session se termine dans 5 minutes !' })
+        }
+      }
+    }
+
+    tick()
+    const interval = setInterval(tick, 1000)
+    return () => clearInterval(interval)
+  }, [activeMembership])
+
+  const planLabel = (t: string) => {
+    const labels: Record<string, string> = { daily: 'Journalier', weekly: 'Hebdomadaire', biweekly: '2 Semaines', monthly: 'Mensuel', quarterly: 'Trimestriel', half_day: 'Demi-journée' }
+    return labels[t] || t
+  }
+
+  const formatDate = (dateStr: string) => {
+    return new Date(dateStr).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })
+  }
+
   if (authLoading || !user) {
     return (
       <div className="min-h-screen bg-bg flex items-center justify-center">
@@ -551,80 +619,6 @@ export default function ClientDashboard() {
       setPendingRequest({ id: '', membership: payMembership, created_at: new Date().toISOString() })
       setTimeout(() => { setPaySuccess(false); setShowPayModal(false); setPayMembership('') }, 2000)
     }
-  }
-
-  // Get active membership
-  const activeMembership = memberships.find(m => m.status === 'active')
-  const isHalfDay = activeMembership?.plan_type === 'half_day'
-  const daysRemaining = activeMembership 
-    ? Math.max(0, Math.ceil((new Date(activeMembership.end_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
-    : 0
-  const membershipProgress = activeMembership
-    ? Math.max(2, Math.min(100, Math.round(((Date.now() - new Date(activeMembership.start_date).getTime()) / (new Date(activeMembership.end_date).getTime() - new Date(activeMembership.start_date).getTime())) * 100)))
-    : 0
-
-  // Half-day countdown timer
-  useEffect(() => {
-    if (!activeMembership || activeMembership.plan_type !== 'half_day' || !activeMembership.end_time) {
-      setHalfDayEndTime(null)
-      setHalfDayCountdown(null)
-      return
-    }
-    const end = new Date(activeMembership.end_time)
-    setHalfDayEndTime(end)
-
-    const tick = () => {
-      const remaining = end.getTime() - Date.now()
-      if (remaining <= 0) {
-        setHalfDayCountdown('00:00')
-        if (!halfDayNotifiedRef.current.has('ended')) {
-          halfDayNotifiedRef.current.add('ended')
-          if ('Notification' in window && Notification.permission === 'granted') {
-            new Notification('CoSpace', { body: 'Votre session demi-journée est terminée.' })
-          }
-        }
-        return
-      }
-      const mins = Math.floor(remaining / 60000)
-      const h = Math.floor(mins / 60)
-      const m = mins % 60
-      setHalfDayCountdown(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`)
-
-      // 15 min warning
-      if (mins <= 15 && !halfDayNotifiedRef.current.has('15min')) {
-        halfDayNotifiedRef.current.add('15min')
-        if ('Notification' in window && Notification.permission === 'granted') {
-          new Notification('CoSpace', { body: 'Votre session se termine dans 15 minutes.' })
-        }
-      }
-      // 5 min warning
-      if (mins <= 5 && !halfDayNotifiedRef.current.has('5min')) {
-        halfDayNotifiedRef.current.add('5min')
-        if ('Notification' in window && Notification.permission === 'granted') {
-          new Notification('CoSpace', { body: 'Votre session se termine dans 5 minutes !' })
-        }
-      }
-    }
-
-    tick()
-    const interval = setInterval(tick, 1000)
-    return () => clearInterval(interval)
-  }, [activeMembership])
-
-  const planLabel = (t: string) => ({ daily: 'Journalier', weekly: 'Hebdomadaire', biweekly: '2 Semaines', monthly: 'Mensuel', quarterly: 'Trimestriel', half_day: 'Demi-journée' }[t] || t)
-
-  // Format date helper
-  const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })
-  }
-
-  // Loading state
-  if (authLoading || !profile) {
-    return (
-      <div className="min-h-screen bg-bg flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-teal" />
-      </div>
-    )
   }
 
   const tabs = [
