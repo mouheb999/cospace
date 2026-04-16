@@ -6,7 +6,7 @@ import { Button, Input, Badge, Avatar } from '@/components/ui'
 import {
   LayoutGrid, Users, DollarSign, TrendingUp, Tag, Bell, Settings,
   AlertTriangle, ChevronRight, Download, Plus, Search, LogOut, X, Loader2, Menu, FileText, Trash2,
-  CreditCard, CheckCircle, XCircle, Clock
+  CreditCard, CheckCircle, XCircle, Clock, Timer
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth/context'
 import { createClient } from '@/lib/supabase/client'
@@ -53,6 +53,11 @@ export default function AdminDashboard() {
   const [showPdfModal, setShowPdfModal] = useState(false)
   const [pdfType, setPdfType] = useState<'daily' | 'weekly' | 'monthly'>('daily')
   const [pdfDate, setPdfDate] = useState(new Date().toISOString().split('T')[0])
+
+  // Half-day settings
+  const [halfDayEnabled, setHalfDayEnabled] = useState(false)
+  const [halfDaySlots, setHalfDaySlots] = useState({ slot1: { start: '08:00', end: '15:30' }, slot2: { start: '15:30', end: '23:00' } })
+  const [halfDaySaving, setHalfDaySaving] = useState(false)
 
   // UI states
   const [searchQuery, setSearchQuery] = useState('')
@@ -113,6 +118,14 @@ export default function AdminDashboard() {
     if ((lbRes as any).data) setLeaderboard((lbRes as any).data as LeaderboardEntry[])
     if (lsRes.data && lsRes.data.length > 0) setRewardText((lsRes.data[0] as any).reward_text || '')
     if (payReqRes.data) setPaymentRequests(payReqRes.data as PaymentRequest[])
+
+    // Fetch half-day settings
+    const { data: hdEnabledData } = await supabase.from('settings').select('value').eq('key', 'half_day_enabled').single()
+    if (hdEnabledData) setHalfDayEnabled((hdEnabledData as any).value === true || (hdEnabledData as any).value === 'true')
+    const { data: hdSlotsData } = await supabase.from('settings').select('value').eq('key', 'half_day_slots').single()
+    if (hdSlotsData) {
+      try { setHalfDaySlots((hdSlotsData as any).value) } catch {}
+    }
 
     setLoading(false)
   }, [user])
@@ -457,13 +470,40 @@ export default function AdminDashboard() {
 
   const handleApproveRequest = async (req: PaymentRequest) => {
     setProcessingReq(req.id)
-    await supabase.from('payment_requests').update({ status: 'approved', handled_by: user!.id, handled_at: new Date().toISOString() } as never).eq('id', req.id)
+    const now = new Date()
+    await supabase.from('payment_requests').update({ status: 'approved', handled_by: user!.id, handled_at: now.toISOString() } as never).eq('id', req.id)
     if (req.user_id) {
       const plan = pricing.find(p => p.plan_type === req.membership)
       if (plan) {
-        const startDate = new Date().toISOString().split('T')[0]
-        const endDate = new Date(Date.now() + plan.duration_days * 86400000).toISOString().split('T')[0]
-        await supabase.from('memberships').insert({ user_id: req.user_id, plan_type: req.membership, price_paid: plan.price, start_date: startDate, end_date: endDate, status: 'active' } as never)
+        const startDate = now.toISOString().split('T')[0]
+
+        if (req.membership === 'half_day') {
+          // Determine which slot based on request timestamp
+          const hours = now.getHours()
+          const minutes = now.getMinutes()
+          const currentTime = hours * 60 + minutes
+          const s1Start = parseInt(halfDaySlots.slot1.start.split(':')[0]) * 60 + parseInt(halfDaySlots.slot1.start.split(':')[1])
+          const s1End = parseInt(halfDaySlots.slot1.end.split(':')[0]) * 60 + parseInt(halfDaySlots.slot1.end.split(':')[1])
+          const s2End = parseInt(halfDaySlots.slot2.end.split(':')[0]) * 60 + parseInt(halfDaySlots.slot2.end.split(':')[1])
+
+          let endTime: Date
+          if (currentTime < s1End) {
+            // Slot 1
+            endTime = new Date(now); endTime.setHours(parseInt(halfDaySlots.slot1.end.split(':')[0]), parseInt(halfDaySlots.slot1.end.split(':')[1]), 0, 0)
+          } else {
+            // Slot 2
+            endTime = new Date(now); endTime.setHours(parseInt(halfDaySlots.slot2.end.split(':')[0]), parseInt(halfDaySlots.slot2.end.split(':')[1]), 0, 0)
+          }
+
+          await supabase.from('memberships').insert({
+            user_id: req.user_id, plan_type: 'half_day', price_paid: plan.price,
+            start_date: startDate, end_date: startDate, status: 'active',
+            start_time: now.toISOString(), end_time: endTime.toISOString(),
+          } as never)
+        } else {
+          const endDate = new Date(Date.now() + plan.duration_days * 86400000).toISOString().split('T')[0]
+          await supabase.from('memberships').insert({ user_id: req.user_id, plan_type: req.membership, price_paid: plan.price, start_date: startDate, end_date: endDate, status: 'active' } as never)
+        }
       }
     }
     setProcessingReq(null)
@@ -479,7 +519,14 @@ export default function AdminDashboard() {
 
   const formatDate = (d: string) => new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })
   const formatShortDate = (d: string) => new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
-  const planLabel = (t: string) => ({ daily: 'Journalier', weekly: 'Hebdomadaire', biweekly: '2 Semaines', monthly: 'Mensuel', quarterly: 'Trimestriel' }[t] || t)
+  const planLabel = (t: string) => ({ daily: 'Journalier', weekly: 'Hebdomadaire', biweekly: '2 Semaines', monthly: 'Mensuel', quarterly: 'Trimestriel', half_day: 'Demi-journée' }[t] || t)
+
+  const saveHalfDaySettings = async () => {
+    setHalfDaySaving(true)
+    await supabase.from('settings').upsert({ key: 'half_day_enabled', value: halfDayEnabled } as never, { onConflict: 'key' })
+    await supabase.from('settings').upsert({ key: 'half_day_slots', value: halfDaySlots as any } as never, { onConflict: 'key' })
+    setHalfDaySaving(false)
+  }
 
   const navItems = [
     { id: 'overview' as const, label: 'Vue Globale', icon: LayoutGrid },
@@ -1346,6 +1393,80 @@ export default function AdminDashboard() {
                     </label>
                   </div>
                 ))}
+
+                {/* Half-Day Membership Settings */}
+                <div className="mt-7">
+                  <h3 className="font-display text-[1.2rem] tracking-[0.08em] text-muted mb-3.5 flex items-center gap-2">
+                    <Timer size={18} className="text-teal" /> Demi-journée
+                  </h3>
+
+                  <div className="flex items-center justify-between py-3.5 border-b border-border">
+                    <div>
+                      <div className="font-semibold text-[0.85rem]">Activer Demi-journée</div>
+                      <div className="text-[0.72rem] text-muted">Visible dans les formulaires de paiement</div>
+                    </div>
+                    <label className="relative inline-block w-11 h-6">
+                      <input type="checkbox" checked={halfDayEnabled} onChange={(e) => setHalfDayEnabled(e.target.checked)} className="sr-only peer" />
+                      <span className="absolute inset-0 bg-surface2 rounded-full cursor-pointer transition-all border border-border peer-checked:bg-teal/20 peer-checked:border-teal" />
+                      <span className="absolute left-0.5 bottom-0.5 w-[18px] h-[18px] bg-muted rounded-full transition-all peer-checked:translate-x-5 peer-checked:bg-teal" />
+                    </label>
+                  </div>
+
+                  <div className="mt-4 bg-surface2 rounded-[14px] p-4">
+                    <div className="text-[0.72rem] font-bold uppercase tracking-[0.1em] text-muted mb-3">Créneaux horaires</div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <div className="text-[0.7rem] font-semibold mb-1.5 text-teal">Créneau 1 (Matin)</div>
+                        <div className="flex gap-2 items-center">
+                          <input type="time" value={halfDaySlots.slot1.start} onChange={(e) => setHalfDaySlots(s => ({ ...s, slot1: { ...s.slot1, start: e.target.value } }))} className="bg-bg border border-border text-white py-2 px-3 rounded-lg text-[0.82rem] outline-none focus:border-teal w-full" />
+                          <span className="text-muted text-[0.8rem]">→</span>
+                          <input type="time" value={halfDaySlots.slot1.end} onChange={(e) => setHalfDaySlots(s => ({ ...s, slot1: { ...s.slot1, end: e.target.value } }))} className="bg-bg border border-border text-white py-2 px-3 rounded-lg text-[0.82rem] outline-none focus:border-teal w-full" />
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[0.7rem] font-semibold mb-1.5 text-lime">Créneau 2 (Après-midi)</div>
+                        <div className="flex gap-2 items-center">
+                          <input type="time" value={halfDaySlots.slot2.start} onChange={(e) => setHalfDaySlots(s => ({ ...s, slot2: { ...s.slot2, start: e.target.value } }))} className="bg-bg border border-border text-white py-2 px-3 rounded-lg text-[0.82rem] outline-none focus:border-teal w-full" />
+                          <span className="text-muted text-[0.8rem]">→</span>
+                          <input type="time" value={halfDaySlots.slot2.end} onChange={(e) => setHalfDaySlots(s => ({ ...s, slot2: { ...s.slot2, end: e.target.value } }))} className="bg-bg border border-border text-white py-2 px-3 rounded-lg text-[0.82rem] outline-none focus:border-teal w-full" />
+                        </div>
+                      </div>
+                    </div>
+                    <Button variant="teal" className="mt-4" onClick={saveHalfDaySettings} disabled={halfDaySaving}>
+                      {halfDaySaving ? <Loader2 size={14} className="animate-spin" /> : '💾 Sauvegarder'}
+                    </Button>
+                  </div>
+
+                  {/* Active Half-Day Sessions */}
+                  {(() => {
+                    const activeHalfDay = allMemberships
+                      .filter(m => m.plan_type === 'half_day' && m.status === 'active')
+                      .map(m => {
+                        const member = members.find(mb => mb.id === m.user_id)
+                        const endTime = (m as any).end_time ? new Date((m as any).end_time) : null
+                        const isExpired = endTime ? endTime.getTime() < Date.now() : false
+                        return { ...m, member, endTime, isExpired }
+                      })
+                    if (activeHalfDay.length === 0) return null
+                    return (
+                      <div className="mt-5 bg-surface border border-border rounded-[14px] p-4">
+                        <div className="text-[0.72rem] font-bold uppercase tracking-[0.1em] text-muted mb-3">Sessions demi-journée actives ({activeHalfDay.length})</div>
+                        {activeHalfDay.map((s) => (
+                          <div key={s.id} className={`flex items-center justify-between py-2.5 border-b border-border last:border-none ${s.isExpired ? 'opacity-50' : ''}`}>
+                            <div className="flex items-center gap-2">
+                              <div className={`w-2 h-2 rounded-full ${s.isExpired ? 'bg-danger' : 'bg-success'}`} />
+                              <span className="font-semibold text-[0.82rem]">{s.member ? `${s.member.first_name} ${s.member.last_name}` : 'Inconnu'}</span>
+                            </div>
+                            <div className="flex items-center gap-3 text-[0.75rem]">
+                              <span className="text-muted">Fin: {s.endTime ? s.endTime.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '-'}</span>
+                              <Badge variant={s.isExpired ? 'danger' : 'teal'}>{s.isExpired ? 'Expiré' : 'Actif'}</Badge>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  })()}
+                </div>
               </div>
             </div>
           </div>

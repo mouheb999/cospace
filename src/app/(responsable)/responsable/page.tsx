@@ -82,6 +82,7 @@ export default function ResponsableDashboard() {
   const [showPdfModal, setShowPdfModal] = useState(false)
   const [pdfType, setPdfType] = useState<'daily' | 'weekly' | 'monthly'>('daily')
   const [pdfDate, setPdfDate] = useState(new Date().toISOString().split('T')[0])
+  const [halfDaySlots, setHalfDaySlots] = useState({ slot1: { start: '08:00', end: '15:30' }, slot2: { start: '15:30', end: '23:00' } })
 
   // Chat state
   const [activeChat, setActiveChat] = useState<ChatConversation | null>(null)
@@ -141,7 +142,7 @@ export default function ResponsableDashboard() {
 
   const fetchAllData = async () => {
     setLoading(true)
-    await Promise.all([fetchTodayCheckins(), fetchLeaderboard(), fetchConversations(), fetchOnlineUsers(), fetchPaymentRequests(), fetchPricing()])
+    await Promise.all([fetchTodayCheckins(), fetchLeaderboard(), fetchConversations(), fetchOnlineUsers(), fetchPaymentRequests(), fetchPricing(), fetchHalfDaySlots()])
     setLoading(false)
   }
 
@@ -255,26 +256,43 @@ export default function ResponsableDashboard() {
     }
   }
 
+  const fetchHalfDaySlots = async () => {
+    const { data } = await supabase.from('settings').select('value').eq('key', 'half_day_slots').single()
+    if (data) { try { setHalfDaySlots((data as any).value) } catch {} }
+  }
+
   const handleApproveRequest = async (req: PaymentRequest) => {
     setProcessingReq(req.id)
-    // Update request status
-    await supabase.from('payment_requests').update({ status: 'approved', handled_by: user!.id, handled_at: new Date().toISOString() } as never).eq('id', req.id)
+    const now = new Date()
+    await supabase.from('payment_requests').update({ status: 'approved', handled_by: user!.id, handled_at: now.toISOString() } as never).eq('id', req.id)
 
-    // If user_id exists, create membership
     if (req.user_id) {
       const { data: pricingData } = await supabase.from('pricing').select('price, duration_days').eq('plan_type', req.membership).single()
       const pricing = pricingData as { price: number; duration_days: number } | null
       if (pricing) {
-        const startDate = new Date().toISOString().split('T')[0]
-        const endDate = new Date(Date.now() + pricing.duration_days * 86400000).toISOString().split('T')[0]
-        await supabase.from('memberships').insert({
-          user_id: req.user_id,
-          plan_type: req.membership,
-          price_paid: pricing.price,
-          start_date: startDate,
-          end_date: endDate,
-          status: 'active',
-        } as never)
+        const startDate = now.toISOString().split('T')[0]
+
+        if (req.membership === 'half_day') {
+          const currentMin = now.getHours() * 60 + now.getMinutes()
+          const s1End = parseInt(halfDaySlots.slot1.end.split(':')[0]) * 60 + parseInt(halfDaySlots.slot1.end.split(':')[1])
+          let endTime: Date
+          if (currentMin < s1End) {
+            endTime = new Date(now); endTime.setHours(parseInt(halfDaySlots.slot1.end.split(':')[0]), parseInt(halfDaySlots.slot1.end.split(':')[1]), 0, 0)
+          } else {
+            endTime = new Date(now); endTime.setHours(parseInt(halfDaySlots.slot2.end.split(':')[0]), parseInt(halfDaySlots.slot2.end.split(':')[1]), 0, 0)
+          }
+          await supabase.from('memberships').insert({
+            user_id: req.user_id, plan_type: 'half_day', price_paid: pricing.price,
+            start_date: startDate, end_date: startDate, status: 'active',
+            start_time: now.toISOString(), end_time: endTime.toISOString(),
+          } as never)
+        } else {
+          const endDate = new Date(Date.now() + pricing.duration_days * 86400000).toISOString().split('T')[0]
+          await supabase.from('memberships').insert({
+            user_id: req.user_id, plan_type: req.membership, price_paid: pricing.price,
+            start_date: startDate, end_date: endDate, status: 'active',
+          } as never)
+        }
       }
     }
 
@@ -289,7 +307,7 @@ export default function ResponsableDashboard() {
     fetchPaymentRequests()
   }
 
-  const planLabel = (t: string) => ({ daily: 'Journalier', weekly: 'Hebdomadaire', monthly: 'Mensuel', quarterly: 'Trimestriel' }[t] || t)
+  const planLabel = (t: string) => ({ daily: 'Journalier', weekly: 'Hebdomadaire', biweekly: '2 Semaines', monthly: 'Mensuel', quarterly: 'Trimestriel', half_day: 'Demi-journée' }[t] || t)
 
   const generateRequestsPDF = async () => {
     const doc = new jsPDF()

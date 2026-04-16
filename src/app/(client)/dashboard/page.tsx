@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button, Card, Badge, Avatar } from '@/components/ui'
 import { LiveDot } from '@/components/decorations/Decorations'
@@ -25,6 +25,8 @@ interface Membership {
   end_date: string
   status: string
   price_paid: number
+  start_time?: string
+  end_time?: string
 }
 
 interface Announcement {
@@ -67,6 +69,9 @@ export default function ClientDashboard() {
   const [nameChangeFirst, setNameChangeFirst] = useState('')
   const [nameChangeLast, setNameChangeLast] = useState('')
   const [nameChangeSaving, setNameChangeSaving] = useState(false)
+  const [halfDayCountdown, setHalfDayCountdown] = useState<string | null>(null)
+  const [halfDayEndTime, setHalfDayEndTime] = useState<Date | null>(null)
+  const halfDayNotifiedRef = useRef<Set<string>>(new Set())
   const [chatActive, setChatActive] = useState(false)
   const [showPayModal, setShowPayModal] = useState(false)
   const [payMembership, setPayMembership] = useState('')
@@ -102,9 +107,14 @@ export default function ClientDashboard() {
         if (membershipError) console.error('[Dashboard] Memberships full error:', JSON.stringify(membershipError, null, 2))
         if (membershipData) setMemberships(membershipData)
 
-        // Fetch pricing plans for pay modal
+        // Fetch pricing plans for pay modal (filter half_day based on settings)
         const { data: pricingPlans } = await supabase.from('pricing').select('plan_type, name, price').order('price', { ascending: true })
-        if (pricingPlans) setPayPlans(pricingPlans as any)
+        const { data: hdSetting } = await supabase.from('settings').select('value').eq('key', 'half_day_enabled').single()
+        const hdOn = hdSetting && ((hdSetting as any).value === true || (hdSetting as any).value === 'true')
+        if (pricingPlans) {
+          const filtered = hdOn ? pricingPlans : pricingPlans.filter((p: any) => p.plan_type !== 'half_day')
+          setPayPlans(filtered as any)
+        }
 
         // Check for pending payment request
         const { data: pendingReq } = await supabase
@@ -545,12 +555,63 @@ export default function ClientDashboard() {
 
   // Get active membership
   const activeMembership = memberships.find(m => m.status === 'active')
+  const isHalfDay = activeMembership?.plan_type === 'half_day'
   const daysRemaining = activeMembership 
     ? Math.max(0, Math.ceil((new Date(activeMembership.end_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
     : 0
   const membershipProgress = activeMembership
     ? Math.max(2, Math.min(100, Math.round(((Date.now() - new Date(activeMembership.start_date).getTime()) / (new Date(activeMembership.end_date).getTime() - new Date(activeMembership.start_date).getTime())) * 100)))
     : 0
+
+  // Half-day countdown timer
+  useEffect(() => {
+    if (!activeMembership || activeMembership.plan_type !== 'half_day' || !activeMembership.end_time) {
+      setHalfDayEndTime(null)
+      setHalfDayCountdown(null)
+      return
+    }
+    const end = new Date(activeMembership.end_time)
+    setHalfDayEndTime(end)
+
+    const tick = () => {
+      const remaining = end.getTime() - Date.now()
+      if (remaining <= 0) {
+        setHalfDayCountdown('00:00')
+        if (!halfDayNotifiedRef.current.has('ended')) {
+          halfDayNotifiedRef.current.add('ended')
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification('CoSpace', { body: 'Votre session demi-journée est terminée.' })
+          }
+        }
+        return
+      }
+      const mins = Math.floor(remaining / 60000)
+      const h = Math.floor(mins / 60)
+      const m = mins % 60
+      setHalfDayCountdown(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`)
+
+      // 15 min warning
+      if (mins <= 15 && !halfDayNotifiedRef.current.has('15min')) {
+        halfDayNotifiedRef.current.add('15min')
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification('CoSpace', { body: 'Votre session se termine dans 15 minutes.' })
+        }
+      }
+      // 5 min warning
+      if (mins <= 5 && !halfDayNotifiedRef.current.has('5min')) {
+        halfDayNotifiedRef.current.add('5min')
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification('CoSpace', { body: 'Votre session se termine dans 5 minutes !' })
+        }
+      }
+    }
+
+    tick()
+    const interval = setInterval(tick, 1000)
+    return () => clearInterval(interval)
+  }, [activeMembership])
+
+  const planLabel = (t: string) => ({ daily: 'Journalier', weekly: 'Hebdomadaire', biweekly: '2 Semaines', monthly: 'Mensuel', quarterly: 'Trimestriel', half_day: 'Demi-journée' }[t] || t)
 
   // Format date helper
   const formatDate = (dateStr: string) => {
@@ -584,7 +645,7 @@ export default function ClientDashboard() {
           <Avatar name={`${profile.first_name} ${profile.last_name}`} size="md" avatarUrl={profile.avatar_url} />
           <div>
             <div className="font-bold text-[0.88rem]">{profile.first_name} {profile.last_name?.[0]}.</div>
-            <div className="text-[0.65rem] text-muted">Membre {activeMembership?.plan_type || 'Free'}</div>
+            <div className="text-[0.65rem] text-muted">Membre {activeMembership ? planLabel(activeMembership.plan_type) : 'Free'}</div>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -638,7 +699,7 @@ export default function ClientDashboard() {
                 <div className="text-[1.4rem] mb-1">⏳</div>
                 <div className="font-display text-[1.1rem] text-yellow-bright tracking-[0.04em]">Demande en attente</div>
                 <div className="text-[0.72rem] text-muted mt-1">
-                  Abonnement <strong className="text-white capitalize">{pendingRequest.membership}</strong> · Soumise le {new Date(pendingRequest.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                  Abonnement <strong className="text-white">{planLabel(pendingRequest.membership)}</strong> · Soumise le {new Date(pendingRequest.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                 </div>
               </div>
             ) : (
@@ -693,6 +754,40 @@ export default function ClientDashboard() {
               </div>
             </Card>
 
+            {/* Half-Day Countdown Banner */}
+            {isHalfDay && halfDayCountdown !== null && (
+              <div className={`w-full rounded-[18px] p-5 mb-4 border-2 ${
+                halfDayCountdown === '00:00' 
+                  ? 'bg-danger/10 border-danger/40' 
+                  : parseInt(halfDayCountdown.split(':')[0]) === 0 && parseInt(halfDayCountdown.split(':')[1]) <= 15
+                    ? 'bg-yellow-bright/10 border-yellow-bright/40'
+                    : 'bg-teal/10 border-teal/30'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-[0.65rem] uppercase tracking-[0.1em] text-muted mb-1">Session Demi-journée</div>
+                    <div className="font-display text-[1.6rem] tracking-[0.04em] leading-none">
+                      {halfDayCountdown === '00:00' ? (
+                        <span className="text-danger">Session terminée</span>
+                      ) : (
+                        <span className="text-teal">Temps restant</span>
+                      )}
+                    </div>
+                    {halfDayEndTime && (
+                      <div className="text-[0.7rem] text-muted mt-1">
+                        Fin : {halfDayEndTime.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                    )}
+                  </div>
+                  <div className={`font-display text-[2.8rem] leading-none ${
+                    halfDayCountdown === '00:00' ? 'text-danger' : 'text-teal'
+                  }`}>
+                    {halfDayCountdown}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Check-in CTA */}
             {todayCheckin ? (
               <div className="w-full bg-success/10 border border-success/30 rounded-[18px] p-5 flex items-center gap-4 mb-5">
@@ -737,7 +832,7 @@ export default function ClientDashboard() {
               <div className="flex-1 min-w-0">
                 <div className="font-bold text-[0.88rem]">Mon Abonnement</div>
                 <div className="text-[0.68rem] text-muted">
-                  {activeMembership ? `${activeMembership.plan_type} · ${daysRemaining}j restants` : 'Aucun abonnement actif'}
+                  {activeMembership ? `${planLabel(activeMembership.plan_type)} · ${isHalfDay && halfDayCountdown ? halfDayCountdown + ' restant' : daysRemaining + 'j restants'}` : 'Aucun abonnement actif'}
                 </div>
               </div>
               <ChevronRight size={16} className={`text-muted flex-shrink-0 transition-transform ${showSubDetails ? 'rotate-90' : ''}`} />
@@ -749,26 +844,41 @@ export default function ClientDashboard() {
                   <>
                     <div className="grid grid-cols-2 gap-3 mb-3">
                       <div className="bg-surface2 rounded-[10px] p-3">
-                        <div className="text-[0.6rem] text-muted uppercase tracking-[0.1em] mb-1">Début</div>
-                        <div className="font-bold text-[0.85rem]">{formatDate(activeMembership.start_date)}</div>
+                        <div className="text-[0.6rem] text-muted uppercase tracking-[0.1em] mb-1">{isHalfDay ? 'Début session' : 'Début'}</div>
+                        <div className="font-bold text-[0.85rem]">
+                          {isHalfDay && activeMembership.start_time
+                            ? new Date(activeMembership.start_time).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+                            : formatDate(activeMembership.start_date)}
+                        </div>
                       </div>
                       <div className="bg-surface2 rounded-[10px] p-3">
-                        <div className="text-[0.6rem] text-muted uppercase tracking-[0.1em] mb-1">Expiration</div>
-                        <div className={`font-bold text-[0.85rem] ${daysRemaining <= 7 ? 'text-yellow-bright' : 'text-lime'}`}>
-                          {formatDate(activeMembership.end_date)}
+                        <div className="text-[0.6rem] text-muted uppercase tracking-[0.1em] mb-1">{isHalfDay ? 'Fin session' : 'Expiration'}</div>
+                        <div className={`font-bold text-[0.85rem] ${isHalfDay ? (halfDayCountdown === '00:00' ? 'text-danger' : 'text-teal') : daysRemaining <= 7 ? 'text-yellow-bright' : 'text-lime'}`}>
+                          {isHalfDay && activeMembership.end_time
+                            ? new Date(activeMembership.end_time).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+                            : formatDate(activeMembership.end_date)}
                         </div>
                       </div>
                     </div>
-                    <div className="bg-white/[0.06] rounded-full h-2 overflow-hidden mb-1.5">
-                      <div
-                        className="h-full bg-gradient-to-r from-teal to-lime rounded-full transition-all duration-500"
-                        style={{ width: `${Math.min(100, Math.max(0, 100 - (daysRemaining / (activeMembership.plan_type === 'monthly' ? 30 : activeMembership.plan_type === 'weekly' ? 7 : 1)) * 100))}%` }}
-                      />
-                    </div>
-                    <div className="flex justify-between text-[0.65rem] text-muted">
-                      <span>{daysRemaining} jours restants</span>
-                      <span>Statut: {activeMembership.status}</span>
-                    </div>
+                    {isHalfDay && halfDayCountdown ? (
+                      <div className="flex justify-between text-[0.65rem] text-muted">
+                        <span>Temps restant : <strong className={halfDayCountdown === '00:00' ? 'text-danger' : 'text-teal'}>{halfDayCountdown}</strong></span>
+                        <span>Statut: {halfDayCountdown === '00:00' ? 'Terminé' : 'Actif'}</span>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="bg-white/[0.06] rounded-full h-2 overflow-hidden mb-1.5">
+                          <div
+                            className="h-full bg-gradient-to-r from-teal to-lime rounded-full transition-all duration-500"
+                            style={{ width: `${Math.min(100, Math.max(0, 100 - (daysRemaining / (activeMembership.plan_type === 'monthly' ? 30 : activeMembership.plan_type === 'weekly' ? 7 : 1)) * 100))}%` }}
+                          />
+                        </div>
+                        <div className="flex justify-between text-[0.65rem] text-muted">
+                          <span>{daysRemaining} jours restants</span>
+                          <span>Statut: {activeMembership.status}</span>
+                        </div>
+                      </>
+                    )}
                   </>
                 ) : (
                   <div className="text-center py-4">
@@ -1140,7 +1250,7 @@ export default function ClientDashboard() {
                 )}
 
                 <div className="flex gap-1.5 mt-3">
-                  <Badge variant="teal">{activeMembership?.plan_type || 'Free'}</Badge>
+                  <Badge variant="teal">{activeMembership ? planLabel(activeMembership.plan_type) : 'Free'}</Badge>
                   <Badge variant="lime">Streak {streakData?.currentStreak || 0} 🔥</Badge>
                 </div>
               </div>
@@ -1175,7 +1285,7 @@ export default function ClientDashboard() {
                 { value: streakData?.currentStreak || 0, label: 'Streak', icon: '🔥' },
                 { value: streakData?.bestStreak || 0, label: 'Record', icon: '🏆' },
                 { value: totalCheckins, label: 'Check-ins', icon: '📸' },
-                { value: daysRemaining, label: 'Jours abo', icon: '📅' },
+                { value: isHalfDay && halfDayCountdown ? halfDayCountdown : daysRemaining, label: isHalfDay ? 'Restant' : 'Jours abo', icon: isHalfDay ? '⏱️' : '📅' },
               ].map((stat, i) => (
                 <div key={i} className="bg-surface border border-border rounded-[12px] p-3 text-center">
                   <div className="text-[0.9rem] mb-0.5">{stat.icon}</div>
