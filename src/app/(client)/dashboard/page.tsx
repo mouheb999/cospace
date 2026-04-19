@@ -65,10 +65,7 @@ export default function ClientDashboard() {
   const [showNotifSettings, setShowNotifSettings] = useState(false)
   const [unreadMessages, setUnreadMessages] = useState(0)
   const [showSubDetails, setShowSubDetails] = useState(false)
-  const [requireNameChange, setRequireNameChange] = useState(false)
-  const [nameChangeFirst, setNameChangeFirst] = useState('')
   const [nameChangeLast, setNameChangeLast] = useState('')
-  const [nameChangeSaving, setNameChangeSaving] = useState(false)
   const [halfDayCountdown, setHalfDayCountdown] = useState<string | null>(null)
   const [halfDayEndTime, setHalfDayEndTime] = useState<Date | null>(null)
   const halfDayNotifiedRef = useRef<Set<string>>(new Set())
@@ -199,25 +196,19 @@ export default function ClientDashboard() {
     }
   }, [profile?.status_message])
 
-  // Detect first login — show onboarding if profile has no avatar and no last_checkin
+  // Detect first login — show onboarding only once (skip persisted in localStorage)
   useEffect(() => {
-    if (profile && !profile.avatar_url && !profile.last_checkin) {
+    if (!profile) return
+    const skipped = typeof window !== 'undefined' && localStorage.getItem('cospace_onboarding_done')
+    if (skipped) return
+    const fn = (profile.first_name || '').trim().toLowerCase()
+    const needsName = fn === 'user' || fn === '' || fn === 'user.'
+    const needsAvatar = !profile.avatar_url
+    if (needsName || (needsAvatar && !profile.last_checkin)) {
       setShowOnboarding(true)
-      setOnboardingName(profile.first_name || '')
+      setOnboardingName(needsName ? '' : (profile.first_name || ''))
     }
   }, [profile])
-
-  // Force name change if user has default name
-  useEffect(() => {
-    if (profile && !showOnboarding) {
-      const fn = (profile.first_name || '').trim().toLowerCase()
-      if (fn === 'user' || fn === '' || fn === 'user.') {
-        setRequireNameChange(true)
-        setNameChangeFirst('')
-        setNameChangeLast('')
-      }
-    }
-  }, [profile, showOnboarding])
 
   const handleOnboardingAvatar = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -235,12 +226,16 @@ export default function ClientDashboard() {
       if (onboardingName.trim()) {
         updates.first_name = onboardingName.trim()
       }
+      if (nameChangeLast.trim()) {
+        updates.last_name = nameChangeLast.trim()
+      }
       if (Object.keys(updates).length > 0) {
         await updateProfile(updates)
       }
       if (onboardingAvatar) {
         await uploadAvatar(onboardingAvatar)
       }
+      localStorage.setItem('cospace_onboarding_done', '1')
       setShowOnboarding(false)
     } catch (err) {
       console.error('Onboarding save error:', err)
@@ -250,6 +245,7 @@ export default function ClientDashboard() {
   }
 
   const handleOnboardingSkip = () => {
+    localStorage.setItem('cospace_onboarding_done', '1')
     setShowOnboarding(false)
   }
 
@@ -380,7 +376,15 @@ export default function ClientDashboard() {
   }, [authLoading, user, router])
 
   // Get active membership (computed before early returns so hooks are stable)
-  const activeMembership = memberships.find(m => m.status === 'active')
+  const rawActiveMembership = memberships.find(m => m.status === 'active')
+  // Check if membership is actually expired client-side (DB cron may not have run yet)
+  const isEffectivelyExpired = rawActiveMembership ? (() => {
+    if (rawActiveMembership.plan_type === 'half_day' && rawActiveMembership.end_time) {
+      return new Date(rawActiveMembership.end_time).getTime() <= Date.now()
+    }
+    return new Date(rawActiveMembership.end_date).getTime() < Date.now() - 86400000
+  })() : false
+  const activeMembership = isEffectivelyExpired ? undefined : rawActiveMembership
   const isHalfDay = activeMembership?.plan_type === 'half_day'
   const daysRemaining = activeMembership 
     ? Math.max(0, Math.ceil((new Date(activeMembership.end_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
@@ -509,14 +513,24 @@ export default function ClientDashboard() {
             </label>
           </div>
 
-          {/* Name input */}
-          <div className="mb-6">
-            <label className="text-[0.72rem] text-muted uppercase tracking-[0.1em] block mb-2">Votre prénom</label>
+          {/* Name inputs */}
+          <div className="mb-4">
+            <label className="text-[0.72rem] text-muted uppercase tracking-[0.1em] block mb-2">Prénom</label>
             <input
               type="text"
               value={onboardingName}
               onChange={(e) => setOnboardingName(e.target.value)}
-              placeholder="Comment vous appelez-vous ?"
+              placeholder="Votre prénom"
+              className="w-full bg-surface border border-border rounded-xl px-4 py-3 text-white placeholder:text-white/25 outline-none focus:border-teal transition-colors"
+            />
+          </div>
+          <div className="mb-6">
+            <label className="text-[0.72rem] text-muted uppercase tracking-[0.1em] block mb-2">Nom</label>
+            <input
+              type="text"
+              value={nameChangeLast}
+              onChange={(e) => setNameChangeLast(e.target.value)}
+              placeholder="Votre nom de famille"
               className="w-full bg-surface border border-border rounded-xl px-4 py-3 text-white placeholder:text-white/25 outline-none focus:border-teal transition-colors"
             />
           </div>
@@ -1531,60 +1545,6 @@ export default function ClientDashboard() {
         ))}
       </nav>
 
-      {/* Force Name Change Modal */}
-      {requireNameChange && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[200] p-4">
-          <div className="bg-surface border border-teal/30 rounded-2xl w-full max-w-[380px] p-6 animate-fade-up">
-            <div className="text-center mb-5">
-              <div className="w-14 h-14 rounded-full bg-teal/15 flex items-center justify-center mx-auto mb-3">
-                <Edit3 size={24} className="text-teal" />
-              </div>
-              <h2 className="font-display text-[1.3rem] tracking-[0.04em] mb-1">Complétez votre profil</h2>
-              <p className="text-[0.78rem] text-muted">Veuillez entrer votre vrai nom pour continuer.</p>
-            </div>
-            <div className="flex flex-col gap-3 mb-5">
-              <div>
-                <label className="text-[0.65rem] font-semibold uppercase tracking-[0.1em] text-muted block mb-1">Prénom</label>
-                <input
-                  type="text"
-                  value={nameChangeFirst}
-                  onChange={(e) => setNameChangeFirst(e.target.value)}
-                  placeholder="Votre prénom"
-                  className="w-full bg-surface2 border border-border rounded-xl px-4 py-3 text-[0.88rem] text-white focus:outline-none focus:border-teal/50"
-                />
-              </div>
-              <div>
-                <label className="text-[0.65rem] font-semibold uppercase tracking-[0.1em] text-muted block mb-1">Nom</label>
-                <input
-                  type="text"
-                  value={nameChangeLast}
-                  onChange={(e) => setNameChangeLast(e.target.value)}
-                  placeholder="Votre nom de famille"
-                  className="w-full bg-surface2 border border-border rounded-xl px-4 py-3 text-[0.88rem] text-white focus:outline-none focus:border-teal/50"
-                />
-              </div>
-            </div>
-            <Button
-              variant="teal"
-              fullWidth
-              disabled={!nameChangeFirst.trim() || !nameChangeLast.trim() || nameChangeFirst.trim().toLowerCase() === 'user' || nameChangeSaving}
-              onClick={async () => {
-                setNameChangeSaving(true)
-                try {
-                  await updateProfile({ first_name: nameChangeFirst.trim(), last_name: nameChangeLast.trim() })
-                  setRequireNameChange(false)
-                } catch (err) {
-                  console.error('Name change error:', err)
-                } finally {
-                  setNameChangeSaving(false)
-                }
-              }}
-            >
-              {nameChangeSaving ? <Loader2 size={16} className="animate-spin" /> : 'Confirmer'}
-            </Button>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

@@ -42,27 +42,32 @@ export function useStreak() {
 
       setStreakData(streak)
 
-      // If streak is lost and profile still shows a non-zero streak, reset it
-      if (streak.status === 'lost') {
-        console.log('[Streak] Streak lost — checking if profile needs reset')
-        const { data: currentProfile } = await supabase
-          .from('profiles')
-          .select('current_streak')
-          .eq('id', user.id)
-          .limit(1)
+      // Sync profile current_streak with calculated value so leaderboard matches
+      const { data: currentProfile } = await supabase
+        .from('profiles')
+        .select('current_streak, longest_streak')
+        .eq('id', user.id)
+        .limit(1)
 
-        const profileStreak = (currentProfile as any)?.[0]?.current_streak ?? 0
-        if (profileStreak > 0) {
-          console.log('[Streak] Resetting profile current_streak from', profileStreak, 'to 0')
-          const { error: updateError } = await supabase
-            .from('profiles')
-            .update({
-              current_streak: 0,
-              updated_at: new Date().toISOString(),
-            } as never)
-            .eq('id', user.id)
-          if (updateError) console.error('[Streak] Error resetting streak:', JSON.stringify(updateError, null, 2))
-        }
+      const profileStreak = (currentProfile as any)?.[0]?.current_streak ?? 0
+      const profileBest = (currentProfile as any)?.[0]?.longest_streak ?? 0
+      const updates: Record<string, any> = {}
+
+      if (profileStreak !== streak.currentStreak) {
+        console.log('[Streak] Syncing profile current_streak from', profileStreak, 'to', streak.currentStreak)
+        updates.current_streak = streak.currentStreak
+      }
+      if (streak.bestStreak > profileBest) {
+        console.log('[Streak] Syncing profile longest_streak from', profileBest, 'to', streak.bestStreak)
+        updates.longest_streak = streak.bestStreak
+      }
+      if (Object.keys(updates).length > 0) {
+        updates.updated_at = new Date().toISOString()
+        const { error: updateError } = await supabase
+          .from('profiles')
+          .update(updates as never)
+          .eq('id', user.id)
+        if (updateError) console.error('[Streak] Error syncing streak:', JSON.stringify(updateError, null, 2))
       }
     } catch (err: any) {
       console.error('[Streak] CATCH error:', err?.message, err?.code, err?.details, err?.hint)
