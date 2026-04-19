@@ -33,6 +33,8 @@ export function useLeaderboard(limit: number = 10) {
         .from('profiles')
         .select('id, first_name, last_name, avatar_url, longest_streak, current_streak, last_checkin, status_message')
         .not('last_checkin', 'is', null)
+        .gt('current_streak', 0)
+        .gte('last_checkin', cutoff)
         .order('current_streak', { ascending: false })
         .order('longest_streak', { ascending: false })
         .limit(limit)

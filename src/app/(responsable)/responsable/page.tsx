@@ -293,6 +293,14 @@ export default function ResponsableDashboard() {
             start_date: startDate, end_date: endDate, status: 'active',
           } as never)
         }
+
+        // Auto-log revenue from approved payment
+        await supabase.from('daily_revenue').insert({
+          date: startDate,
+          amount: pricing.price,
+          note: `${planLabel(req.membership)} — ${req.name}`,
+          logged_by: user!.id,
+        } as never)
       }
     }
 

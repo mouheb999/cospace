@@ -132,6 +132,18 @@ export default function AdminDashboard() {
 
   useEffect(() => { fetchData() }, [fetchData])
 
+  // Real-time updates for revenue, payment requests, and memberships
+  useEffect(() => {
+    const channel = supabase
+      .channel('admin-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_revenue' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'payment_requests' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'memberships' }, () => fetchData())
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'checkins' }, () => fetchData())
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [fetchData])
+
   // Computed KPIs
   const activeMembers = members.filter(m => allMemberships.some(ms => ms.user_id === m.id && ms.status === 'active')).length
   const now = new Date()
@@ -504,6 +516,14 @@ export default function AdminDashboard() {
           const endDate = new Date(Date.now() + plan.duration_days * 86400000).toISOString().split('T')[0]
           await supabase.from('memberships').insert({ user_id: req.user_id, plan_type: req.membership, price_paid: plan.price, start_date: startDate, end_date: endDate, status: 'active' } as never)
         }
+
+        // Auto-log revenue from approved payment
+        await supabase.from('daily_revenue').insert({
+          date: startDate,
+          amount: plan.price,
+          note: `${planLabel(req.membership)} — ${req.name}`,
+          logged_by: user!.id,
+        } as never)
       }
     }
     setProcessingReq(null)
