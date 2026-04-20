@@ -15,6 +15,7 @@ import {
 } from 'recharts'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
+import PrintReceiptButton from '@/components/PrintReceiptButton'
 
 type AdminPage = 'overview' | 'members' | 'revenue' | 'requests' | 'leaderboard' | 'pricing' | 'announce' | 'settings'
 
@@ -1107,19 +1108,36 @@ export default function AdminDashboard() {
                               <th className="text-left p-4">Formule</th>
                               <th className="text-left p-4">Source</th>
                               <th className="text-left p-4">Heure</th>
-                              <th className="text-right p-4">Statut</th>
+                              <th className="text-right p-4">Reçu</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {approvedToday.map((req) => (
-                              <tr key={req.id} className="border-b border-border last:border-none">
-                                <td className="p-4 font-bold text-[0.85rem]">{req.name}</td>
-                                <td className="p-4 text-[0.82rem] capitalize">{planLabel(req.membership)}</td>
-                                <td className="p-4"><Badge variant={req.source === 'user' ? 'teal' : 'lime'}>{req.source === 'user' ? 'Membre' : 'Public'}</Badge></td>
-                                <td className="p-4 text-[0.78rem] text-muted">{new Date(req.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</td>
-                                <td className="p-4 text-right"><span className="text-teal font-bold text-[0.78rem]">✅ Approuvé</span></td>
-                              </tr>
-                            ))}
+                            {approvedToday.map((req) => {
+                              const ms = req.user_id ? allMemberships.find(m => m.user_id === req.user_id && m.plan_type === req.membership) : null
+                              const planPrice = pricing.find(p => p.plan_type === req.membership)?.price
+                              return (
+                                <tr key={req.id} className="border-b border-border last:border-none">
+                                  <td className="p-4 font-bold text-[0.85rem]">{req.name}</td>
+                                  <td className="p-4 text-[0.82rem] capitalize">{planLabel(req.membership)}</td>
+                                  <td className="p-4"><Badge variant={req.source === 'user' ? 'teal' : 'lime'}>{req.source === 'user' ? 'Membre' : 'Public'}</Badge></td>
+                                  <td className="p-4 text-[0.78rem] text-muted">{new Date(req.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</td>
+                                  <td className="p-4 text-right">
+                                    <div className="flex justify-end">
+                                      <PrintReceiptButton
+                                        data={{
+                                          clientName: req.name,
+                                          membership: planLabel(req.membership),
+                                          price: planPrice,
+                                          timestamp: req.handled_at || req.created_at,
+                                          endTime: (ms as any)?.end_time || null,
+                                          receiptNumber: req.id.slice(0, 8).toUpperCase(),
+                                        }}
+                                      />
+                                    </div>
+                                  </td>
+                                </tr>
+                              )
+                            })}
                           </tbody>
                         </table>
                       </div>

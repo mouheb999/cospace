@@ -11,6 +11,7 @@ import { useAuth } from '@/lib/auth/context'
 import { createClient } from '@/lib/supabase/client'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
+import PrintReceiptButton from '@/components/PrintReceiptButton'
 
 type PageType = 'checkins' | 'leaderboard' | 'chats' | 'online' | 'requests'
 
@@ -827,12 +828,21 @@ export default function ResponsableDashboard() {
                                   <div className="font-bold text-[0.82rem]">{req.name}</div>
                                   <div className="flex items-center gap-2">
                                     <Badge variant={req.source === 'user' ? 'teal' : 'lime'}>{req.source === 'user' ? 'Membre' : 'Public'}</Badge>
-                                    <span className="text-[0.62rem] text-muted capitalize">{req.membership}</span>
+                                    <span className="text-[0.62rem] text-muted capitalize">{planLabel(req.membership)}</span>
                                   </div>
                                 </div>
                                 <div className="text-[0.62rem] text-teal font-medium">
                                   {new Date(req.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
                                 </div>
+                                <PrintReceiptButton
+                                  data={{
+                                    clientName: req.name,
+                                    membership: planLabel(req.membership),
+                                    price: pricingMap[req.membership],
+                                    timestamp: req.created_at,
+                                    receiptNumber: req.id.slice(0, 8).toUpperCase(),
+                                  }}
+                                />
                               </div>
                             ))}
                           </div>
