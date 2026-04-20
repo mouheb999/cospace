@@ -1,4 +1,4 @@
-import { differenceInDays, startOfDay, isToday, isYesterday, subDays, format } from 'date-fns'
+import { startOfDay, isToday, subDays, format } from 'date-fns'
 import { fr } from 'date-fns/locale'
 
 export type StreakStatus = 'active' | 'warning' | 'lost' | 'none'
@@ -13,6 +13,13 @@ export interface StreakData {
   hoursRemaining: number | null
 }
 
+/**
+ * Streak logic — single rule:
+ *   A streak chain is broken as soon as the gap between two consecutive
+ *   check-ins exceeds STREAK_LOST_HOURS (26h). Same-day multiple check-ins
+ *   count as one. Status (active/warning/lost) is derived purely from the
+ *   time since the most recent check-in (see getStreakTiming).
+ */
 export function calculateStreak(checkInDates: Date[]): StreakData {
   if (checkInDates.length === 0) {
     return {
@@ -26,37 +33,52 @@ export function calculateStreak(checkInDates: Date[]): StreakData {
     }
   }
 
-  const sortedDates = checkInDates
-    .map((d) => startOfDay(new Date(d)))
+  // Sort all raw check-in timestamps newest-first
+  const sortedRaw = checkInDates
+    .map((d) => new Date(d))
     .sort((a, b) => b.getTime() - a.getTime())
 
+  // Keep only the latest check-in per calendar day (same-day dupes don't count twice)
+  const dayMap = new Map<number, Date>()
+  for (const d of sortedRaw) {
+    const key = startOfDay(d).getTime()
+    if (!dayMap.has(key)) dayMap.set(key, d)
+  }
+  const uniqueDayCheckins = Array.from(dayMap.values()).sort(
+    (a, b) => b.getTime() - a.getTime()
+  )
+
   const today = startOfDay(new Date())
-  const checkedInToday = isToday(sortedDates[0])
-  const lastCheckIn = sortedDates[0]
+  const lastCheckIn = sortedRaw[0]
+  const checkedInToday = isToday(lastCheckIn)
+  const streakTiming = getStreakTiming(lastCheckIn)
+  const isLost = streakTiming.status === 'lost'
 
+  const LOST_MS = STREAK_LOST_HOURS * 60 * 60 * 1000
+
+  // Current streak: 0 if lost; otherwise walk back, breaking when gap > 26h
   let currentStreak = 0
-  let bestStreak = 0
-  let tempStreak = 1
-
-  // Calculate current streak
-  let expectedDate = checkedInToday ? today : startOfDay(subDays(today, 1))
-  
-  for (const date of sortedDates) {
-    if (date.getTime() === expectedDate.getTime()) {
-      currentStreak++
-      expectedDate = startOfDay(subDays(expectedDate, 1))
-    } else if (date.getTime() < expectedDate.getTime()) {
-      break
+  if (!isLost) {
+    currentStreak = 1
+    for (let i = 1; i < uniqueDayCheckins.length; i++) {
+      const gapMs = uniqueDayCheckins[i - 1].getTime() - uniqueDayCheckins[i].getTime()
+      if (gapMs <= LOST_MS) {
+        currentStreak++
+      } else {
+        break
+      }
     }
   }
 
-  // Calculate best streak
-  for (let i = 0; i < sortedDates.length; i++) {
+  // Best streak: scan all chains using the same 26h rule
+  let bestStreak = 0
+  let tempStreak = 0
+  for (let i = 0; i < uniqueDayCheckins.length; i++) {
     if (i === 0) {
       tempStreak = 1
     } else {
-      const diff = differenceInDays(sortedDates[i - 1], sortedDates[i])
-      if (diff === 1) {
+      const gapMs = uniqueDayCheckins[i - 1].getTime() - uniqueDayCheckins[i].getTime()
+      if (gapMs <= LOST_MS) {
         tempStreak++
       } else {
         bestStreak = Math.max(bestStreak, tempStreak)
@@ -66,18 +88,18 @@ export function calculateStreak(checkInDates: Date[]): StreakData {
   }
   bestStreak = Math.max(bestStreak, tempStreak, currentStreak)
 
-  // Calculate week progress (last 7 days)
+  // Week progress (last 7 calendar days) — visual only
   const weekProgress: boolean[] = []
   for (let i = 6; i >= 0; i--) {
     const day = startOfDay(subDays(today, i))
-    const hasCheckIn = sortedDates.some((d) => d.getTime() === day.getTime())
+    const hasCheckIn = uniqueDayCheckins.some(
+      (d) => startOfDay(d).getTime() === day.getTime()
+    )
     weekProgress.push(hasCheckIn)
   }
 
-  const streakTiming = getStreakTiming(lastCheckIn)
-
   return {
-    currentStreak: streakTiming.status === 'lost' ? 0 : currentStreak,
+    currentStreak,
     bestStreak,
     checkedInToday,
     lastCheckIn,
