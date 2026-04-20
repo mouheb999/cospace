@@ -12,6 +12,7 @@ import { createClient } from '@/lib/supabase/client'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import PrintReceiptButton from '@/components/PrintReceiptButton'
+import useVisibilityRefresh from '@/hooks/useVisibilityRefresh'
 
 type PageType = 'checkins' | 'leaderboard' | 'chats' | 'online' | 'requests'
 
@@ -140,6 +141,34 @@ export default function ResponsableDashboard() {
     }, 30000)
     return () => clearInterval(refresh)
   }, [user])
+
+  // Realtime: new payment requests + incoming messages update convos/badge instantly
+  useEffect(() => {
+    if (!user) return
+    const channel = supabase
+      .channel('resp-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'payment_requests' }, () => {
+        fetchPaymentRequests()
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+        const msg = payload.new as { receiver_id: string }
+        if (msg.receiver_id === user.id) fetchConversations()
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, () => {
+        fetchConversations()
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [user])
+
+  // PWA / mobile: refetch everything when app returns to foreground
+  useVisibilityRefresh(() => {
+    if (!user) return
+    fetchPaymentRequests()
+    fetchConversations()
+    fetchOnlineUsers()
+    fetchTodayCheckins()
+  })
 
   const fetchAllData = async () => {
     setLoading(true)

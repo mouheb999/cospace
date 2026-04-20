@@ -16,6 +16,7 @@ import {
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import PrintReceiptButton from '@/components/PrintReceiptButton'
+import useVisibilityRefresh from '@/hooks/useVisibilityRefresh'
 
 type AdminPage = 'overview' | 'members' | 'revenue' | 'requests' | 'leaderboard' | 'pricing' | 'announce' | 'settings'
 
@@ -144,6 +145,9 @@ export default function AdminDashboard() {
       .subscribe()
     return () => { supabase.removeChannel(channel) }
   }, [fetchData])
+
+  // PWA / mobile: refetch on return to foreground to catch events missed while backgrounded
+  useVisibilityRefresh(() => { fetchData() })
 
   // Computed KPIs
   const activeMembers = members.filter(m => allMemberships.some(ms => ms.user_id === m.id && ms.status === 'active')).length

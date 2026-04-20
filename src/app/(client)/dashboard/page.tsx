@@ -13,6 +13,7 @@ import { useAuth } from '@/lib/auth/context'
 import { useProfile } from '@/hooks/useProfile'
 import { useStreak } from '@/hooks/useStreak'
 import { useLeaderboard } from '@/hooks/useLeaderboard'
+import useVisibilityRefresh from '@/hooks/useVisibilityRefresh'
 import { createClient } from '@/lib/supabase/client'
 import { Chat } from '@/components/Chat'
 
@@ -188,6 +189,31 @@ export default function ClientDashboard() {
     if (!user) return
     fetchDashboardData()
   }, [user])
+
+  // Realtime: react when the responsable approves/rejects or assigns a membership
+  useEffect(() => {
+    if (!user) return
+    const channel = supabase
+      .channel('client-realtime-' + user.id)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'memberships', filter: `user_id=eq.${user.id}` }, () => {
+        fetchDashboardData()
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'payment_requests', filter: `user_id=eq.${user.id}` }, () => {
+        fetchDashboardData()
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'announcements' }, () => {
+        fetchDashboardData()
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [user])
+
+  // PWA / mobile: refetch when app returns to foreground (catches events missed while backgrounded)
+  useVisibilityRefresh(() => {
+    if (!user) return
+    fetchDashboardData()
+    refreshStreak()
+  })
 
   // Init status message from profile
   useEffect(() => {
