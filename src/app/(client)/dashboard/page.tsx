@@ -125,7 +125,8 @@ export default function ClientDashboard() {
           .eq('status', 'pending')
           .order('created_at', { ascending: false })
           .limit(1)
-        if (pendingReq && pendingReq.length > 0) setPendingRequest(pendingReq[0] as any)
+        // Always set (clear when none) so approval flips UI from pending → active instantly
+        setPendingRequest(pendingReq && pendingReq.length > 0 ? (pendingReq[0] as any) : null)
 
         // Fetch announcements (table may not exist yet)
         console.log('[Dashboard] Fetching announcements')

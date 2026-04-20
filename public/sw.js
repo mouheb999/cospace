@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cospace-v1';
+const CACHE_NAME = 'cospace-v2';
 const urlsToCache = [
   '/',
   '/login',
@@ -31,27 +31,36 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Fetch event - Network first, fallback to cache
+// Fetch event — Network first, fallback to cache.
+// IMPORTANT: never cache API / Supabase / dynamic data — only static assets.
+// Caching JSON responses causes stale UI bugs (e.g. payment_requests still showing 'pending').
 self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+
+  // Skip non-GET requests entirely (Supabase uses POST/PATCH via fetch + WebSocket)
+  if (event.request.method !== 'GET') return;
+
+  // Never intercept Supabase, API routes, auth, or WebSocket upgrades
+  const isDynamic =
+    url.hostname.includes('supabase.co') ||
+    url.pathname.startsWith('/api/') ||
+    url.pathname.startsWith('/auth/') ||
+    url.pathname.startsWith('/_next/data/') ||
+    event.request.headers.get('upgrade') === 'websocket';
+
+  if (isDynamic) return; // Let the browser handle it — no SW caching
+
+  // For static navigations/assets: network-first with cache fallback
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        // Clone the response
-        const responseClone = response.clone();
-        
-        // Cache successful GET requests
-        if (event.request.method === 'GET' && response.status === 200) {
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseClone);
-          });
+        if (response.status === 200 && response.type === 'basic') {
+          const responseClone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseClone));
         }
-        
         return response;
       })
-      .catch(() => {
-        // Fallback to cache
-        return caches.match(event.request);
-      })
+      .catch(() => caches.match(event.request))
   );
 });
 
