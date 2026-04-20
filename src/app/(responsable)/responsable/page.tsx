@@ -70,7 +70,7 @@ export default function ResponsableDashboard() {
   const { user, isLoading: authLoading, signOut } = useAuth()
   const supabase = createClient()
 
-  const [activePage, setActivePage] = useState<PageType>('checkins')
+  const [activePage, setActivePage] = useState<PageType>('requests')
   const [todayCheckins, setTodayCheckins] = useState<CheckinEntry[]>([])
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
   const [conversations, setConversations] = useState<ChatConversation[]>([])
