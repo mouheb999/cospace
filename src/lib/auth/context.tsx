@@ -27,22 +27,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const initAuth = async () => {
       try {
-        console.log('[Auth] Initializing auth...');
-        const { data: { session: currentSession }, error: sessionError } = await supabase.auth.getSession();
-        
-        console.log('[Auth] Session:', currentSession ? 'found' : 'none', 'Error:', sessionError);
-
+        const { data: { session: currentSession } } = await supabase.auth.getSession();
         if (currentSession?.user) {
           setSession(currentSession);
           setUser(currentSession.user);
-        } else {
-          console.log('[Auth] No session found');
         }
       } catch (error) {
-        console.error('[Auth] Init error:', error);
+        if (process.env.NODE_ENV !== 'production') console.error('[Auth] Init error:', error);
       } finally {
         initialized = true;
-        console.log('[Auth] Init complete, setting isLoading=false');
         setIsLoading(false);
       }
     };
@@ -53,10 +46,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       (event, newSession) => {
         // Skip INITIAL_SESSION and SIGNED_IN during init — getSession() already handles it
         if (!initialized && (event === 'INITIAL_SESSION' || event === 'SIGNED_IN')) {
-          console.log('[Auth] Skipping duplicate event during init:', event);
           return;
         }
-        console.log('[Auth] State change:', event);
         setSession(newSession);
         setUser(newSession?.user ?? null);
         setIsLoading(false);

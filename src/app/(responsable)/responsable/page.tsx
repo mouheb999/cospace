@@ -216,12 +216,15 @@ export default function ResponsableDashboard() {
   const fetchConversations = async () => {
     if (!user) return
 
-    // Get all messages involving this responsable
+    // Get the most recent messages involving this responsable (last 30 days is plenty for preview + unread)
+    const since = new Date(Date.now() - 30 * 86400000).toISOString()
     const { data: messages } = await supabase
       .from('messages')
-      .select('*')
+      .select('id, sender_id, receiver_id, content, is_read, created_at')
       .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
+      .gte('created_at', since)
       .order('created_at', { ascending: false })
+      .limit(500)
 
     if (!messages || messages.length === 0) {
       setConversations([])
@@ -296,42 +299,43 @@ export default function ResponsableDashboard() {
     const now = new Date()
     await supabase.from('payment_requests').update({ status: 'approved', handled_by: user!.id, handled_at: now.toISOString() } as never).eq('id', req.id)
 
-    if (req.user_id) {
-      const { data: pricingData } = await supabase.from('pricing').select('price, duration_days').eq('plan_type', req.membership).single()
-      const pricing = pricingData as { price: number; duration_days: number } | null
-      if (pricing) {
-        const startDate = now.toISOString().split('T')[0]
+    const { data: pricingData } = await supabase.from('pricing').select('price, duration_days').eq('plan_type', req.membership).single()
+    const pricing = pricingData as { price: number; duration_days: number } | null
+    const startDate = now.toISOString().split('T')[0]
 
-        if (req.membership === 'half_day') {
-          const currentMin = now.getHours() * 60 + now.getMinutes()
-          const s1End = parseInt(halfDaySlots.slot1.end.split(':')[0]) * 60 + parseInt(halfDaySlots.slot1.end.split(':')[1])
-          let endTime: Date
-          if (currentMin < s1End) {
-            endTime = new Date(now); endTime.setHours(parseInt(halfDaySlots.slot1.end.split(':')[0]), parseInt(halfDaySlots.slot1.end.split(':')[1]), 0, 0)
-          } else {
-            endTime = new Date(now); endTime.setHours(parseInt(halfDaySlots.slot2.end.split(':')[0]), parseInt(halfDaySlots.slot2.end.split(':')[1]), 0, 0)
-          }
-          await supabase.from('memberships').insert({
-            user_id: req.user_id, plan_type: 'half_day', price_paid: pricing.price,
-            start_date: startDate, end_date: startDate, status: 'active',
-            start_time: now.toISOString(), end_time: endTime.toISOString(),
-          } as never)
+    // Membership row only for registered users
+    if (req.user_id && pricing) {
+      if (req.membership === 'half_day') {
+        const currentMin = now.getHours() * 60 + now.getMinutes()
+        const s1End = parseInt(halfDaySlots.slot1.end.split(':')[0]) * 60 + parseInt(halfDaySlots.slot1.end.split(':')[1])
+        let endTime: Date
+        if (currentMin < s1End) {
+          endTime = new Date(now); endTime.setHours(parseInt(halfDaySlots.slot1.end.split(':')[0]), parseInt(halfDaySlots.slot1.end.split(':')[1]), 0, 0)
         } else {
-          const endDate = new Date(Date.now() + pricing.duration_days * 86400000).toISOString().split('T')[0]
-          await supabase.from('memberships').insert({
-            user_id: req.user_id, plan_type: req.membership, price_paid: pricing.price,
-            start_date: startDate, end_date: endDate, status: 'active',
-          } as never)
+          endTime = new Date(now); endTime.setHours(parseInt(halfDaySlots.slot2.end.split(':')[0]), parseInt(halfDaySlots.slot2.end.split(':')[1]), 0, 0)
         }
-
-        // Auto-log revenue from approved payment
-        await supabase.from('daily_revenue').insert({
-          date: startDate,
-          amount: pricing.price,
-          note: `${planLabel(req.membership)} — ${req.name}`,
-          logged_by: user!.id,
+        await supabase.from('memberships').insert({
+          user_id: req.user_id, plan_type: 'half_day', price_paid: pricing.price,
+          start_date: startDate, end_date: startDate, status: 'active',
+          start_time: now.toISOString(), end_time: endTime.toISOString(),
+        } as never)
+      } else {
+        const endDate = new Date(Date.now() + pricing.duration_days * 86400000).toISOString().split('T')[0]
+        await supabase.from('memberships').insert({
+          user_id: req.user_id, plan_type: req.membership, price_paid: pricing.price,
+          start_date: startDate, end_date: endDate, status: 'active',
         } as never)
       }
+    }
+
+    // Revenue is logged for EVERY approved request — including public walk-ins
+    if (pricing) {
+      await supabase.from('daily_revenue').insert({
+        date: startDate,
+        amount: pricing.price,
+        note: `${planLabel(req.membership)} — ${req.name}${req.source === 'public' ? ' (public)' : ''}`,
+        logged_by: user!.id,
+      } as never)
     }
 
     setProcessingReq(null)

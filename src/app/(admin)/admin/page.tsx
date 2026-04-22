@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button, Input, Badge, Avatar } from '@/components/ui'
 import {
@@ -134,20 +134,30 @@ export default function AdminDashboard() {
 
   useEffect(() => { fetchData() }, [fetchData])
 
+  // Debounce fetchData so bursts of realtime events coalesce into a single refetch
+  const fetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const scheduleFetch = useCallback(() => {
+    if (fetchTimerRef.current) clearTimeout(fetchTimerRef.current)
+    fetchTimerRef.current = setTimeout(() => { fetchData() }, 500)
+  }, [fetchData])
+
   // Real-time updates for revenue, payment requests, and memberships
   useEffect(() => {
     const channel = supabase
       .channel('admin-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_revenue' }, () => fetchData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'payment_requests' }, () => fetchData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'memberships' }, () => fetchData())
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'checkins' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_revenue' }, scheduleFetch)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'payment_requests' }, scheduleFetch)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'memberships' }, scheduleFetch)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'checkins' }, scheduleFetch)
       .subscribe()
-    return () => { supabase.removeChannel(channel) }
-  }, [fetchData])
+    return () => {
+      supabase.removeChannel(channel)
+      if (fetchTimerRef.current) clearTimeout(fetchTimerRef.current)
+    }
+  }, [scheduleFetch])
 
   // PWA / mobile: refetch on return to foreground to catch events missed while backgrounded
-  useVisibilityRefresh(() => { fetchData() })
+  useVisibilityRefresh(() => { scheduleFetch() })
 
   // Computed KPIs
   const activeMembers = members.filter(m => allMemberships.some(ms => ms.user_id === m.id && ms.status === 'active')).length
@@ -489,47 +499,40 @@ export default function AdminDashboard() {
     setProcessingReq(req.id)
     const now = new Date()
     await supabase.from('payment_requests').update({ status: 'approved', handled_by: user!.id, handled_at: now.toISOString() } as never).eq('id', req.id)
-    if (req.user_id) {
-      const plan = pricing.find(p => p.plan_type === req.membership)
-      if (plan) {
-        const startDate = now.toISOString().split('T')[0]
 
-        if (req.membership === 'half_day') {
-          // Determine which slot based on request timestamp
-          const hours = now.getHours()
-          const minutes = now.getMinutes()
-          const currentTime = hours * 60 + minutes
-          const s1Start = parseInt(halfDaySlots.slot1.start.split(':')[0]) * 60 + parseInt(halfDaySlots.slot1.start.split(':')[1])
-          const s1End = parseInt(halfDaySlots.slot1.end.split(':')[0]) * 60 + parseInt(halfDaySlots.slot1.end.split(':')[1])
-          const s2End = parseInt(halfDaySlots.slot2.end.split(':')[0]) * 60 + parseInt(halfDaySlots.slot2.end.split(':')[1])
+    const plan = pricing.find(p => p.plan_type === req.membership)
+    const startDate = now.toISOString().split('T')[0]
 
-          let endTime: Date
-          if (currentTime < s1End) {
-            // Slot 1
-            endTime = new Date(now); endTime.setHours(parseInt(halfDaySlots.slot1.end.split(':')[0]), parseInt(halfDaySlots.slot1.end.split(':')[1]), 0, 0)
-          } else {
-            // Slot 2
-            endTime = new Date(now); endTime.setHours(parseInt(halfDaySlots.slot2.end.split(':')[0]), parseInt(halfDaySlots.slot2.end.split(':')[1]), 0, 0)
-          }
-
-          await supabase.from('memberships').insert({
-            user_id: req.user_id, plan_type: 'half_day', price_paid: plan.price,
-            start_date: startDate, end_date: startDate, status: 'active',
-            start_time: now.toISOString(), end_time: endTime.toISOString(),
-          } as never)
+    // Membership row only makes sense for registered users
+    if (req.user_id && plan) {
+      if (req.membership === 'half_day') {
+        const currentTime = now.getHours() * 60 + now.getMinutes()
+        const s1End = parseInt(halfDaySlots.slot1.end.split(':')[0]) * 60 + parseInt(halfDaySlots.slot1.end.split(':')[1])
+        let endTime: Date
+        if (currentTime < s1End) {
+          endTime = new Date(now); endTime.setHours(parseInt(halfDaySlots.slot1.end.split(':')[0]), parseInt(halfDaySlots.slot1.end.split(':')[1]), 0, 0)
         } else {
-          const endDate = new Date(Date.now() + plan.duration_days * 86400000).toISOString().split('T')[0]
-          await supabase.from('memberships').insert({ user_id: req.user_id, plan_type: req.membership, price_paid: plan.price, start_date: startDate, end_date: endDate, status: 'active' } as never)
+          endTime = new Date(now); endTime.setHours(parseInt(halfDaySlots.slot2.end.split(':')[0]), parseInt(halfDaySlots.slot2.end.split(':')[1]), 0, 0)
         }
-
-        // Auto-log revenue from approved payment
-        await supabase.from('daily_revenue').insert({
-          date: startDate,
-          amount: plan.price,
-          note: `${planLabel(req.membership)} — ${req.name}`,
-          logged_by: user!.id,
+        await supabase.from('memberships').insert({
+          user_id: req.user_id, plan_type: 'half_day', price_paid: plan.price,
+          start_date: startDate, end_date: startDate, status: 'active',
+          start_time: now.toISOString(), end_time: endTime.toISOString(),
         } as never)
+      } else {
+        const endDate = new Date(Date.now() + plan.duration_days * 86400000).toISOString().split('T')[0]
+        await supabase.from('memberships').insert({ user_id: req.user_id, plan_type: req.membership, price_paid: plan.price, start_date: startDate, end_date: endDate, status: 'active' } as never)
       }
+    }
+
+    // Revenue is logged for EVERY approved request — including public walk-ins
+    if (plan) {
+      await supabase.from('daily_revenue').insert({
+        date: startDate,
+        amount: plan.price,
+        note: `${planLabel(req.membership)} — ${req.name}${req.source === 'public' ? ' (public)' : ''}`,
+        logged_by: user!.id,
+      } as never)
     }
     setProcessingReq(null)
     fetchData()

@@ -39,12 +39,7 @@ export function useLeaderboard(limit: number = 10) {
         .order('longest_streak', { ascending: false })
         .limit(limit)
 
-      console.log('[Leaderboard] Fetched', profiles?.length ?? 0, 'users')
-
-      if (fetchError) {
-        console.error('[Leaderboard] Full error:', JSON.stringify(fetchError, null, 2))
-        throw fetchError
-      }
+      if (fetchError) throw fetchError
 
       const today = new Date().toDateString()
       const mapped = (profiles || []).map((p: any, i: number) => {
@@ -62,10 +57,9 @@ export function useLeaderboard(limit: number = 10) {
         }
       })
 
-      console.log('[Leaderboard] Mapped', mapped.length, 'users')
       setLeaderboard(mapped)
     } catch (err: any) {
-      console.error('[Leaderboard] CATCH error:', err?.message, err?.code, err?.details, err?.hint)
+      if (process.env.NODE_ENV !== 'production') console.error('[Leaderboard]', err?.message)
       setError(err instanceof Error ? err.message : 'Failed to load leaderboard')
     } finally {
       setLoading(false)

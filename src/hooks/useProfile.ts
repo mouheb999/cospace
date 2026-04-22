@@ -39,30 +39,20 @@ export function useProfile() {
     setLoading(true)
 
     try {
-      console.log('[Profile] Fetching profile for user:', user.id)
-
-      const { data, error, status } = await supabase
+      const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', user.id)
         .single()
 
-      console.log('[Profile] Response status:', status, 'Data:', data ? 'found' : 'null', 'Error:', error)
-
       if (error) {
-        console.error('[Profile] Full error:', JSON.stringify(error, null, 2))
-        // If profile doesn't exist, create one
-        if (error.code === 'PGRST116') {
-          console.log('[Profile] Profile not found, creating...')
-          await createProfile()
-          return
-        }
+        if (error.code === 'PGRST116') { await createProfile(); return }
         throw error
       }
 
       setProfile(data as Profile)
     } catch (err: any) {
-      console.error('[Profile] CATCH error:', err?.message, err?.code, err?.details, err?.hint)
+      if (process.env.NODE_ENV !== 'production') console.error('[Profile]', err?.message)
       setError(err instanceof Error ? err.message : 'Failed to load profile')
     } finally {
       setLoading(false)
@@ -75,7 +65,6 @@ export function useProfile() {
     const emailPrefix = user.email?.split('@')[0] || 'user'
     const randomSuffix = Math.floor(Math.random() * 1000)
 
-    console.log('[Profile] Creating profile for user:', user.id, user.email)
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -90,15 +79,10 @@ export function useProfile() {
         .select()
         .single()
 
-      if (error) {
-        console.error('[Profile] Create error:', JSON.stringify(error, null, 2))
-        throw error
-      }
-
-      console.log('[Profile] Created successfully:', data)
+      if (error) throw error
       setProfile(data as Profile)
     } catch (err: any) {
-      console.error('[Profile] Create CATCH:', err?.message, err?.code)
+      if (process.env.NODE_ENV !== 'production') console.error('[Profile create]', err?.message)
       setError(err instanceof Error ? err.message : 'Failed to create profile')
     } finally {
       setLoading(false)

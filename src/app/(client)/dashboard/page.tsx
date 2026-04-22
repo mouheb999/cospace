@@ -94,15 +94,11 @@ export default function ClientDashboard() {
     const fetchData = async () => {
       try {
         // Fetch memberships
-        console.log('[Dashboard] Fetching memberships for user:', user.id)
-        const { data: membershipData, error: membershipError, status: mStatus } = await supabase
+        const { data: membershipData } = await supabase
           .from('memberships')
           .select('*')
           .eq('user_id', user.id)
           .order('created_at', { ascending: false })
-
-        console.log('[Dashboard] Memberships status:', mStatus, 'Count:', membershipData?.length ?? 'null', 'Error:', membershipError)
-        if (membershipError) console.error('[Dashboard] Memberships full error:', JSON.stringify(membershipError, null, 2))
         if (membershipData) setMemberships(membershipData)
 
         // Fetch pricing plans for pay modal (filter half_day based on settings)
@@ -129,26 +125,19 @@ export default function ClientDashboard() {
         setPendingRequest(pendingReq && pendingReq.length > 0 ? (pendingReq[0] as any) : null)
 
         // Fetch announcements (table may not exist yet)
-        console.log('[Dashboard] Fetching announcements')
         try {
-          const { data: announcementData, error: announcementError, status: aStatus } = await supabase
+          const { data: announcementData } = await supabase
             .from('announcements')
             .select('*')
             .order('is_pinned', { ascending: false })
             .order('created_at', { ascending: false })
             .limit(5)
-
-          console.log('[Dashboard] Announcements status:', aStatus, 'Count:', announcementData?.length ?? 'null', 'Error:', announcementError)
-          if (announcementError) console.warn('[Dashboard] Announcements table may not exist:', announcementError.message)
           if (announcementData) setAnnouncements(announcementData)
-        } catch (annErr) {
-          console.warn('[Dashboard] Announcements fetch failed (table may not exist):', annErr)
-        }
+        } catch { /* announcements table may not exist */ }
 
         // Check if user already checked in today
         const todayStr = new Date().toISOString().split('T')[0]
-        console.log('[Dashboard] Checking today checkin for date:', todayStr)
-        const { data: checkinData, error: checkinError, status: cStatus } = await supabase
+        const { data: checkinData } = await supabase
           .from('checkins')
           .select('image_url, checked_in_at')
           .eq('user_id', user.id)
@@ -157,27 +146,31 @@ export default function ClientDashboard() {
           .order('checked_in_at', { ascending: false })
           .limit(1)
 
-        console.log('[Dashboard] Today checkin status:', cStatus, 'Data count:', checkinData?.length ?? 'null', 'Error:', checkinError)
-        if (checkinError) console.error('[Dashboard] Checkin full error:', JSON.stringify(checkinError, null, 2))
-
         if (checkinData && checkinData.length > 0) {
           setTodayCheckin(checkinData[0] as { image_url: string; checked_in_at: string })
         }
 
-        // Fetch all checkin dates for history grid
-        const { data: allCheckins } = await supabase
+        // Total count (cheap head query) + last 180 days of checkin dates for history grid
+        const { count: totalCount } = await supabase
+          .from('checkins')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+        setTotalCheckins(totalCount || 0)
+
+        const since = new Date(Date.now() - 180 * 86400000).toISOString()
+        const { data: recentCheckins } = await supabase
           .from('checkins')
           .select('checked_in_at')
           .eq('user_id', user.id)
+          .gte('checked_in_at', since)
           .order('checked_in_at', { ascending: false })
 
-        if (allCheckins) {
-          setTotalCheckins(allCheckins.length)
-          const dates = new Set(allCheckins.map((c: any) => new Date(c.checked_in_at).toISOString().split('T')[0]))
+        if (recentCheckins) {
+          const dates = new Set(recentCheckins.map((c: any) => new Date(c.checked_in_at).toISOString().split('T')[0]))
           setCheckinDates(dates)
         }
       } catch (err) {
-        console.error('[Dashboard] CATCH error:', err)
+        if (process.env.NODE_ENV !== 'production') console.error('[Dashboard]', err)
         setError('Impossible de charger les données. Veuillez réessayer.')
       }
     }
