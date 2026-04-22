@@ -48,7 +48,10 @@ export default function PublicPayPage() {
     } as never)
 
     if (insertError) {
-      setError('Erreur lors de l\'envoi. Veuillez réessayer.')
+      // Expose the real cause so the user reports a real problem instead of a blank retry
+      if (process.env.NODE_ENV !== 'production') console.error('[Pay] insert error:', insertError)
+      const detail = insertError.message || insertError.details || 'erreur inconnue'
+      setError(`Erreur : ${detail}. Réessayez ou contactez le staff.`)
       setSubmitting(false)
       return
     }
