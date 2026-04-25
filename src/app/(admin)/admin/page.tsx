@@ -172,8 +172,8 @@ export default function AdminDashboard() {
       return Array.from({ length: 7 }, (_, i) => {
         const d = new Date(); d.setDate(d.getDate() - (6 - i))
         const dateStr = d.toISOString().split('T')[0]
-        const entry = dailyRevenue.find(r => r.date === dateStr)
-        return { day: d.toLocaleDateString('fr-FR', { weekday: 'short' }).replace('.', ''), value: entry ? Number(entry.amount) : 0 }
+        const total = dailyRevenue.filter(r => r.date === dateStr).reduce((s, r) => s + Number(r.amount), 0)
+        return { day: d.toLocaleDateString('fr-FR', { weekday: 'short' }).replace('.', ''), value: total }
       })
     } else if (period === 'weekly') {
       return Array.from({ length: 4 }, (_, i) => {
