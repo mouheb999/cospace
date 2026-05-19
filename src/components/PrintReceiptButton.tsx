@@ -33,25 +33,7 @@ export function PrintReceiptButton({
     const source = sourceRef.current
     if (!source) return
 
-    // Measure the rendered receipt height and convert to mm
     const heightMm = Math.ceil(source.scrollHeight * PX_TO_MM) + 2
-    const heightPx = Math.ceil(heightMm / PX_TO_MM)
-
-    // Off-screen iframe with real dimensions — Chromium on Windows 10 skips
-    // rendering content inside width:0/height:0 iframes, producing empty print jobs
-    const iframe = document.createElement('iframe')
-    iframe.setAttribute('aria-hidden', 'true')
-    iframe.style.cssText = `position:fixed;left:-9999px;top:0;width:304px;height:${heightPx}px;border:0;opacity:0;pointer-events:none;`
-    document.body.appendChild(iframe)
-
-    const doc = iframe.contentDocument
-    const win = iframe.contentWindow
-    if (!doc || !win) {
-      iframe.remove()
-      return
-    }
-
-    // Receipt's outerHTML carries all inline styles + SVGs + the font @import.
     const receiptHtml = source.outerHTML
 
     const html = `<!DOCTYPE html>
@@ -83,23 +65,32 @@ export function PrintReceiptButton({
 <body>${receiptHtml}</body>
 </html>`
 
-    doc.open()
-    doc.write(html)
-    doc.close()
+    // Blob URL + window.open — more reliably rendered than doc.write() into an
+    // iframe on Windows 10 Chromium, where hidden iframes can produce empty jobs
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+    const blobUrl = URL.createObjectURL(blob)
+    const printWindow = window.open(blobUrl, '_blank', 'width=400,height=600,left=-9999,top=0')
+
+    if (!printWindow) {
+      URL.revokeObjectURL(blobUrl)
+      return
+    }
 
     const triggerPrint = () => {
       try {
-        win.focus()
-        win.print()
+        printWindow.focus()
+        printWindow.print()
       } catch (err) {
         console.error('[PrintReceipt] print failed:', err)
       }
-      // Remove the iframe after the dialog closes (Chrome blocks until then)
-      setTimeout(() => iframe.remove(), 500)
+      setTimeout(() => {
+        printWindow.close()
+        URL.revokeObjectURL(blobUrl)
+      }, 500)
     }
 
     const waitForFontsThenPrint = () => {
-      const docWithFonts = doc as Document & { fonts?: { ready: Promise<unknown> } }
+      const docWithFonts = printWindow.document as Document & { fonts?: { ready: Promise<unknown> } }
       if (docWithFonts.fonts) {
         docWithFonts.fonts.ready.then(() => setTimeout(triggerPrint, 40))
       } else {
@@ -107,11 +98,7 @@ export function PrintReceiptButton({
       }
     }
 
-    if (doc.readyState === 'complete') {
-      waitForFontsThenPrint()
-    } else {
-      win.addEventListener('load', waitForFontsThenPrint, { once: true })
-    }
+    printWindow.onload = waitForFontsThenPrint
   }
 
   return (
