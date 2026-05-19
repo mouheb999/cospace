@@ -53,15 +53,17 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(function Receipt
           size: 80mm auto;
           margin: 0;
         }
-        html, body {
-          width: 72mm !important;
-          height: fit-content !important;
-          min-height: 0 !important;
-          margin: 0 !important;
-          padding: 0 !important;
-          background: #fff !important;
-          -webkit-print-color-adjust: exact;
-          print-color-adjust: exact;
+        @media print {
+          html, body {
+            width: 72mm !important;
+            height: fit-content !important;
+            min-height: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: #fff !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
         }
       `}</style>
 
