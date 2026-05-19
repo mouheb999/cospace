@@ -58,7 +58,7 @@ export default function PublicPayPage() {
 
     setSubmitted(true)
     setTimeout(() => {
-      router.push('/')
+      router.push('/payment-success')
     }, 2000)
   }
 
