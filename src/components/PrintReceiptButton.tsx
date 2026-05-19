@@ -35,12 +35,13 @@ export function PrintReceiptButton({
 
     // Measure the rendered receipt height and convert to mm
     const heightMm = Math.ceil(source.scrollHeight * PX_TO_MM) + 2
+    const heightPx = Math.ceil(heightMm / PX_TO_MM)
 
-    // Create a hidden iframe to host the print document
+    // Off-screen iframe with real dimensions — Chromium on Windows 10 skips
+    // rendering content inside width:0/height:0 iframes, producing empty print jobs
     const iframe = document.createElement('iframe')
     iframe.setAttribute('aria-hidden', 'true')
-    iframe.style.cssText =
-      'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;'
+    iframe.style.cssText = `position:fixed;left:-9999px;top:0;width:304px;height:${heightPx}px;border:0;opacity:0;pointer-events:none;`
     document.body.appendChild(iframe)
 
     const doc = iframe.contentDocument
