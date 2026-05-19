@@ -14,8 +14,6 @@ export interface ReceiptData {
 interface ReceiptProps {
   data: ReceiptData
   spaceName?: string
-  /** Exact print page height in mm (set after the receipt is measured). */
-  pageHeightMm?: number
 }
 
 const fmt = (d: string | Date) =>
@@ -42,33 +40,15 @@ const ZIGZAG =
   'L240,0 L244,14 L248,0 L252,14 L256,0 L260,14 L264,0 L268,14 L272,0 Z'
 
 export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(function Receipt(
-  { data, spaceName = 'CoSpace', pageHeightMm = 160 },
+  { data, spaceName = 'CoSpace' },
   ref
 ) {
   return (
     <div ref={ref} style={{ width: '72mm', background: '#fff', color: '#000' }}>
 
-      {/* ── Fonts + print page size baked into the receipt itself ── */}
+      {/* Font only — @page lives in pageStyle (iframe <head>) so the browser honors it */}
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Caveat:wght@700&display=swap');
-        @page {
-          size: 80mm ${pageHeightMm}mm;
-          margin: 0;
-        }
-        @media print {
-          html, body {
-            width: 72mm !important;
-            height: ${pageHeightMm}mm !important;
-            min-height: 0 !important;
-            max-height: ${pageHeightMm}mm !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            overflow: hidden !important;
-            background: #fff !important;
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
-          }
-        }
       `}</style>
 
       {/* ── Paper ── */}

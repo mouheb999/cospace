@@ -25,21 +25,22 @@ export function PrintReceiptButton({
   const receiptRef = useRef<HTMLDivElement>(null)
   const [pageHeightMm, setPageHeightMm] = useState<number>(160)
 
-  // Measure the rendered receipt height and lock the page size to it.
-  // Runs once after mount (and on data changes). We wait for fonts so the
-  // Caveat logo's actual baseline-corrected height is included.
+  // Measure the rendered receipt after mount + fonts load, then lock the
+  // print page size to that exact height. By the time the user clicks the
+  // button, pageStyle has been recomputed with the correct value.
   useLayoutEffect(() => {
     let cancelled = false
     const measure = () => {
       if (cancelled) return
       const el = receiptRef.current
       if (!el) return
-      const mm = Math.ceil(el.scrollHeight * PX_TO_MM) + 2 // 2mm safety margin
+      const mm = Math.ceil(el.scrollHeight * PX_TO_MM) + 2 // 2mm safety
       setPageHeightMm((prev) => (prev === mm ? prev : mm))
     }
 
-    if (typeof document !== 'undefined' && (document as Document & { fonts?: { ready: Promise<unknown> } }).fonts) {
-      (document as Document & { fonts: { ready: Promise<unknown> } }).fonts.ready.then(measure)
+    const docWithFonts = document as Document & { fonts?: { ready: Promise<unknown> } }
+    if (docWithFonts.fonts) {
+      docWithFonts.fonts.ready.then(measure)
     } else {
       measure()
     }
@@ -50,12 +51,21 @@ export function PrintReceiptButton({
   const handlePrint = useReactToPrint({
     contentRef: receiptRef,
     documentTitle: `Recu-${data.clientName}-${new Date(data.timestamp).getTime()}`,
-    // Minimal pageStyle — actual @page rule is inside Receipt's own <style>
-    // so it travels with the printed content into the iframe.
+    // @page must live here (iframe <head>) for the browser to honor it.
+    // margin:0 also suppresses Chrome's default headers/footers (date/URL/page#).
     pageStyle: `
+      @page {
+        size: 80mm ${pageHeightMm}mm;
+        margin: 0;
+      }
       html, body {
+        width: 72mm !important;
+        height: ${pageHeightMm}mm !important;
+        min-height: 0 !important;
+        max-height: ${pageHeightMm}mm !important;
         margin: 0 !important;
         padding: 0 !important;
+        overflow: hidden !important;
         background: #fff !important;
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
@@ -80,7 +90,7 @@ export function PrintReceiptButton({
 
       {/* Off-screen at 72mm width so scrollHeight matches the real print height */}
       <div style={{ position: 'fixed', left: '-9999px', top: 0, width: '72mm', visibility: 'hidden', pointerEvents: 'none' }}>
-        <Receipt ref={receiptRef} data={data} spaceName={spaceName} pageHeightMm={pageHeightMm} />
+        <Receipt ref={receiptRef} data={data} spaceName={spaceName} />
       </div>
     </>
   )
