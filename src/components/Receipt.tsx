@@ -49,22 +49,6 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(function Receipt
       {/* ── Fonts + reset ── */}
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Caveat:wght@700&display=swap');
-        @page {
-          size: 80mm auto;
-          margin: 0;
-        }
-        @media print {
-          html, body {
-            width: 72mm !important;
-            height: fit-content !important;
-            min-height: 0 !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            background: #fff !important;
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
-          }
-        }
       `}</style>
 
       {/* ── Paper ── */}

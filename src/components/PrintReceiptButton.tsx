@@ -13,10 +13,6 @@ interface PrintReceiptButtonProps {
   iconOnly?: boolean
 }
 
-/**
- * Self-contained print button: renders hidden Receipt and triggers print dialog.
- * Completely additive — does not modify any approval/database logic.
- */
 export function PrintReceiptButton({
   data,
   spaceName,
@@ -29,22 +25,33 @@ export function PrintReceiptButton({
   const handlePrint = useReactToPrint({
     contentRef: receiptRef,
     documentTitle: `Recu-${data.clientName}-${new Date(data.timestamp).getTime()}`,
-    pageStyle: `
-      @page {
-        size: 80mm auto;
-        margin: 0;
-      }
-      html, body {
-        width: 72mm !important;
-        height: fit-content !important;
-        min-height: 0 !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        background: #fff !important;
-        -webkit-print-color-adjust: exact;
-        print-color-adjust: exact;
-      }
-    `,
+    // Measure the actual rendered receipt height and set the page size exactly —
+    // "auto" height is unreliable across Chrome versions and POS printer drivers.
+    pageStyle: () => {
+      const el = receiptRef.current
+      // scrollHeight captures full content height even if element is off-screen
+      const px = el ? el.scrollHeight + 4 : 400
+      // 1px = 0.2646mm at 96 dpi
+      const mm = Math.ceil(px * 0.2646)
+      return `
+        @page {
+          size: 80mm ${mm}mm;
+          margin: 0mm;
+        }
+        html, body {
+          width: 72mm !important;
+          height: ${mm}mm !important;
+          min-height: 0 !important;
+          max-height: ${mm}mm !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          overflow: hidden !important;
+          background: white !important;
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
+        }
+      `
+    },
   })
 
   return (
@@ -62,8 +69,8 @@ export function PrintReceiptButton({
         {!iconOnly && <span>{label}</span>}
       </button>
 
-      {/* Hidden receipt — only visible in print dialog */}
-      <div style={{ position: 'fixed', left: '-10000px', top: 0, visibility: 'hidden' }}>
+      {/* Rendered off-screen so scrollHeight is measurable */}
+      <div style={{ position: 'fixed', left: '-9999px', top: 0, width: '72mm', visibility: 'hidden', pointerEvents: 'none' }}>
         <Receipt ref={receiptRef} data={data} spaceName={spaceName} />
       </div>
     </>
