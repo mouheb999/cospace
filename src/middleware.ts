@@ -25,7 +25,7 @@ export async function middleware(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
 
   // Public routes — always accessible regardless of session
-  const publicRoutes = ['/', '/login', '/register', '/auth/callback', '/auth/error', '/pay', '/payment-success']
+  const publicRoutes = ['/', '/login', '/register', '/auth/callback', '/auth/error', '/pay', '/payment-success', '/receipt']
   const isPublicRoute = publicRoutes.includes(pathname) || pathname.startsWith('/api/')
 
   if (isPublicRoute) {
