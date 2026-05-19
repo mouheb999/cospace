@@ -30,10 +30,10 @@ export function PrintReceiptButton({
     contentRef: receiptRef,
     documentTitle: `Recu-${data.clientName}-${new Date(data.timestamp).getTime()}`,
     pageStyle: `
+      @import url('https://fonts.googleapis.com/css2?family=Caveat:wght@700&display=swap');
       @page { size: 80mm auto; margin: 0; }
-      @media print {
-        html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
-      }
+      html, body { width: 72mm; margin: 0 !important; padding: 0 !important; background: #fff !important; }
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     `,
   })
 
