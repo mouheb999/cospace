@@ -1,7 +1,6 @@
 'use client'
 
-import { useRef, useState } from 'react'
-import { flushSync } from 'react-dom'
+import { useRef, useState, useLayoutEffect } from 'react'
 import { useReactToPrint } from 'react-to-print'
 import { Printer } from 'lucide-react'
 import Receipt, { ReceiptData } from './Receipt'
@@ -14,24 +13,7 @@ interface PrintReceiptButtonProps {
   iconOnly?: boolean
 }
 
-const buildPageStyle = (heightMm: number) => `
-  @page {
-    size: 80mm ${heightMm}mm;
-    margin: 0mm;
-  }
-  html, body {
-    width: 72mm !important;
-    height: ${heightMm}mm !important;
-    min-height: 0 !important;
-    max-height: ${heightMm}mm !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    overflow: hidden !important;
-    background: white !important;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
-`
+const PX_TO_MM = 0.2646 // 1 CSS px = 0.2646mm at 96dpi
 
 export function PrintReceiptButton({
   data,
@@ -41,30 +23,51 @@ export function PrintReceiptButton({
   iconOnly = false,
 }: PrintReceiptButtonProps) {
   const receiptRef = useRef<HTMLDivElement>(null)
-  // Start with a safe fallback height; updated to exact content height before each print
-  const [pageStyle, setPageStyle] = useState(() => buildPageStyle(160))
+  const [pageHeightMm, setPageHeightMm] = useState<number>(160)
+
+  // Measure the rendered receipt height and lock the page size to it.
+  // Runs once after mount (and on data changes). We wait for fonts so the
+  // Caveat logo's actual baseline-corrected height is included.
+  useLayoutEffect(() => {
+    let cancelled = false
+    const measure = () => {
+      if (cancelled) return
+      const el = receiptRef.current
+      if (!el) return
+      const mm = Math.ceil(el.scrollHeight * PX_TO_MM) + 2 // 2mm safety margin
+      setPageHeightMm((prev) => (prev === mm ? prev : mm))
+    }
+
+    if (typeof document !== 'undefined' && (document as Document & { fonts?: { ready: Promise<unknown> } }).fonts) {
+      (document as Document & { fonts: { ready: Promise<unknown> } }).fonts.ready.then(measure)
+    } else {
+      measure()
+    }
+
+    return () => { cancelled = true }
+  }, [data, spaceName])
 
   const handlePrint = useReactToPrint({
     contentRef: receiptRef,
     documentTitle: `Recu-${data.clientName}-${new Date(data.timestamp).getTime()}`,
-    pageStyle,
+    // Minimal pageStyle — actual @page rule is inside Receipt's own <style>
+    // so it travels with the printed content into the iframe.
+    pageStyle: `
+      html, body {
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #fff !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+    `,
   })
-
-  const onPrintClick = () => {
-    const el = receiptRef.current
-    // Measure exact rendered height, convert px→mm (1px = 0.2646mm at 96dpi), add 4mm buffer
-    const mm = el ? Math.ceil(el.scrollHeight * 0.2646) + 4 : 160
-    // flushSync commits the state update synchronously so react-to-print's
-    // internal options ref is updated before handlePrint() reads it
-    flushSync(() => setPageStyle(buildPageStyle(mm)))
-    handlePrint()
-  }
 
   return (
     <>
       <button
         type="button"
-        onClick={onPrintClick}
+        onClick={() => handlePrint()}
         className={
           className ||
           'flex items-center justify-center gap-1.5 bg-surface2 border border-teal/30 text-teal font-bold py-2 px-3 rounded-xl text-[0.78rem] cursor-pointer hover:bg-teal/10 transition-all'
@@ -75,9 +78,9 @@ export function PrintReceiptButton({
         {!iconOnly && <span>{label}</span>}
       </button>
 
-      {/* Rendered off-screen with explicit width so scrollHeight is accurate */}
+      {/* Off-screen at 72mm width so scrollHeight matches the real print height */}
       <div style={{ position: 'fixed', left: '-9999px', top: 0, width: '72mm', visibility: 'hidden', pointerEvents: 'none' }}>
-        <Receipt ref={receiptRef} data={data} spaceName={spaceName} />
+        <Receipt ref={receiptRef} data={data} spaceName={spaceName} pageHeightMm={pageHeightMm} />
       </div>
     </>
   )
