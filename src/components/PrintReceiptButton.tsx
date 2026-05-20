@@ -100,14 +100,14 @@ export function PrintReceiptButton({
         {!iconOnly && <span>{printing ? '...' : label}</span>}
       </button>
 
-      {/* Off-screen source at 72mm width — used to measure height + rasterize */}
+      {/* Off-screen source — position:fixed left:-9999px keeps it invisible without
+          visibility:hidden, which html2canvas inherits and renders as blank */}
       <div
         style={{
           position: 'fixed',
           left: '-9999px',
           top: 0,
           width: '272px',
-          visibility: 'hidden',
           pointerEvents: 'none',
         }}
       >
