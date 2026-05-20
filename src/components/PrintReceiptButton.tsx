@@ -23,14 +23,15 @@ export function PrintReceiptButton({
 }: PrintReceiptButtonProps) {
   const sourceRef = useRef<HTMLDivElement>(null)
   const [printing, setPrinting] = useState(false)
+  const [ready, setReady] = useState(false)
 
   const handlePrint = async () => {
     const source = sourceRef.current
     if (!source || printing) return
     setPrinting(true)
+    setReady(false)
 
     try {
-      // Wait for all fonts to be ready before rasterizing
       await document.fonts.ready
 
       const heightMm = Math.ceil(source.scrollHeight * PX_TO_MM) + 2
@@ -55,35 +56,25 @@ export function PrintReceiptButton({
         orientation: 'portrait',
       })
 
-      const imgData = canvas.toDataURL('image/png')
-      pdf.addImage(imgData, 'PNG', 0, 0, 80, heightMm)
+      pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, 80, heightMm)
 
+      const filename = `Recu-${data.clientName.replace(/\s+/g, '_')}-${new Date(data.timestamp).getTime()}.pdf`
       const pdfBlob = pdf.output('blob')
       const pdfUrl = URL.createObjectURL(pdfBlob)
 
-      const printWindow = window.open(pdfUrl, '_blank')
-      if (!printWindow) {
-        URL.revokeObjectURL(pdfUrl)
-        return
-      }
+      // Download directly — Chrome's PDF viewer auto-print is incompatible with
+      // ESC/POS drivers on Windows 10. Downloading opens the file in the system
+      // PDF viewer (Adobe/Foxit/Windows) which sends a complete job and cuts correctly.
+      const link = document.createElement('a')
+      link.href = pdfUrl
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
 
-      // Poll until the PDF viewer has fully rendered, then wait an extra 1500ms
-      // before triggering print — PDF rendering in Chromium is async after readyState
-      const checkLoaded = setInterval(() => {
-        try {
-          if (printWindow.document.readyState === 'complete') {
-            clearInterval(checkLoaded)
-            setTimeout(() => {
-              printWindow.onafterprint = () => {
-                printWindow.close()
-                URL.revokeObjectURL(pdfUrl)
-              }
-              printWindow.focus()
-              printWindow.print()
-            }, 1500)
-          }
-        } catch (_) {}
-      }, 500)
+      setTimeout(() => URL.revokeObjectURL(pdfUrl), 10000)
+      setReady(true)
+      setTimeout(() => setReady(false), 4000)
     } catch (err) {
       console.error('[PrintReceipt] failed:', err)
     } finally {
@@ -92,7 +83,7 @@ export function PrintReceiptButton({
   }
 
   return (
-    <>
+    <div className="flex flex-col items-center gap-1">
       <button
         type="button"
         onClick={handlePrint}
@@ -101,11 +92,17 @@ export function PrintReceiptButton({
           className ||
           'flex items-center justify-center gap-1.5 bg-surface2 border border-teal/30 text-teal font-bold py-2 px-3 rounded-xl text-[0.78rem] cursor-pointer hover:bg-teal/10 transition-all disabled:opacity-50'
         }
-        title="Imprimer le reçu"
+        title="Télécharger le reçu PDF"
       >
         <Printer size={14} />
-        {!iconOnly && <span>{printing ? '...' : label}</span>}
+        {!iconOnly && <span>{printing ? 'Génération...' : label}</span>}
       </button>
+
+      {ready && (
+        <span className="text-[0.7rem] text-teal/70 text-center">
+          PDF prêt — ouvrez depuis les téléchargements
+        </span>
+      )}
 
       {/* Off-screen source — position:fixed left:-9999px keeps it invisible without
           visibility:hidden, which html2canvas inherits and renders as blank */}
@@ -120,7 +117,7 @@ export function PrintReceiptButton({
       >
         <Receipt ref={sourceRef} data={data} spaceName={spaceName} />
       </div>
-    </>
+    </div>
   )
 }
 
