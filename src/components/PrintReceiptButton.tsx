@@ -69,12 +69,12 @@ export function PrintReceiptButton({
 
       printWindow.onload = () => {
         setTimeout(() => {
-          printWindow.focus()
-          printWindow.print()
-          setTimeout(() => {
+          printWindow.onafterprint = () => {
             printWindow.close()
             URL.revokeObjectURL(pdfUrl)
-          }, 1000)
+          }
+          printWindow.focus()
+          printWindow.print()
         }, 100)
       }
     } catch (err) {
