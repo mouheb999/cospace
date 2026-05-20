@@ -25,6 +25,7 @@ export function PrintReceiptButton({
     const source = sourceRef.current
     if (!source) return
 
+    const heightMm = Math.ceil(source.scrollHeight * 0.2646) + 4
     const receiptHtml = source.outerHTML
 
     const win = window.open('', '_blank', 'width=300,height=600')
@@ -40,7 +41,7 @@ export function PrintReceiptButton({
 <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@700&display=swap" rel="stylesheet">
 <style>
   @page {
-    size: 80mm auto;
+    size: 80mm ${heightMm}mm;
     margin: 0;
   }
   *, *::before, *::after { box-sizing: border-box; }
