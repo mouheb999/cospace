@@ -67,16 +67,23 @@ export function PrintReceiptButton({
         return
       }
 
-      printWindow.onload = () => {
-        setTimeout(() => {
-          printWindow.onafterprint = () => {
-            printWindow.close()
-            URL.revokeObjectURL(pdfUrl)
+      // Poll until the PDF viewer has fully rendered, then wait an extra 1500ms
+      // before triggering print — PDF rendering in Chromium is async after readyState
+      const checkLoaded = setInterval(() => {
+        try {
+          if (printWindow.document.readyState === 'complete') {
+            clearInterval(checkLoaded)
+            setTimeout(() => {
+              printWindow.onafterprint = () => {
+                printWindow.close()
+                URL.revokeObjectURL(pdfUrl)
+              }
+              printWindow.focus()
+              printWindow.print()
+            }, 1500)
           }
-          printWindow.focus()
-          printWindow.print()
-        }, 100)
-      }
+        } catch (_) {}
+      }, 500)
     } catch (err) {
       console.error('[PrintReceipt] failed:', err)
     } finally {
