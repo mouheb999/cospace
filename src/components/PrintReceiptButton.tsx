@@ -83,7 +83,6 @@ export function PrintReceiptButton({
         {!iconOnly && <span>{label}</span>}
       </button>
 
-      {/* Off-screen source — rendered at 72mm width for correct height measurement */}
       <div
         style={{
           position: 'fixed',
